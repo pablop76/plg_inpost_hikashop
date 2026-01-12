@@ -496,9 +496,4 @@ class plgHikashopshippingInpost_hika extends hikashopShippingPlugin {
 		
 		$ensured = true;
 	}
-
-	var $pluginConfig = array(
-		'show_parcel_lockers' => array('PLG_HIKASHOPSHIPPING_INPOST_HIKA_SHOW_LOCKERS', 'boolean', '1'),
-		'show_pops' => array('PLG_HIKASHOPSHIPPING_INPOST_HIKA_SHOW_POPS', 'boolean', '0')
-	);
 }
