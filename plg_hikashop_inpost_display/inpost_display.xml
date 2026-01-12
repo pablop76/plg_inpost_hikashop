@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<extension type="plugin" group="hikashop" method="upgrade">
+	<name>HikaShop - InPost Paczkomat Display</name>
+	<author>Custom</author>
+	<creationDate>2026-01-12</creationDate>
+	<copyright>Copyright (C) 2026</copyright>
+	<license>GNU/GPLv3</license>
+	<version>1.0.0</version>
+	<description>Wyświetla informację o wybranym paczkomacie w panelu administracyjnym HikaShop</description>
+	<files>
+		<filename plugin="inpost_display">inpost_display.php</filename>
+	</files>
+</extension>
