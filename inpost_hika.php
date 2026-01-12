@@ -118,7 +118,7 @@ class plgHikashopshippingInpost_hika extends hikashopShippingPlugin {
 		$element->shipping_params->google_api_key = '';
 		$element->shipping_params->default_lat = '52.2297';
 		$element->shipping_params->default_lng = '21.0122';
-		$element->shipping_params->default_zoom = '14';
+		$element->shipping_params->default_zoom = ''; // pusty = automatyczny (OSM:13, Google:6)
 		$element->shipping_params->show_parcel_lockers = 1;
 		$element->shipping_params->show_pops = 0;
 	}
@@ -255,7 +255,7 @@ class plgHikashopshippingInpost_hika extends hikashopShippingPlugin {
 		$this->addWidgetScript($widgetId, $shippingId, $showLockers, $showPops, $mapType, $googleApiKey, $defaultLat, $defaultLng, $defaultZoom);
 	}
 
-	protected function addWidgetScript($widgetId, $shippingId, $showLockers = 1, $showPops = 0, $mapType = 'osm', $googleApiKey = '', $defaultLat = 52.2297, $defaultLng = 21.0122, $defaultZoom = 14) {
+	protected function addWidgetScript($widgetId, $shippingId, $showLockers = 1, $showPops = 0, $mapType = 'osm', $googleApiKey = '', $defaultLat = 52.2297, $defaultLng = 21.0122, $defaultZoom = 10) {
 		$doc = JFactory::getDocument();
 		$changeLabel = addslashes(JText::_('PLG_HIKASHOPSHIPPING_INPOST_HIKA_CHANGE'));
 		$loadingMsg = addslashes(JText::_('PLG_HIKASHOPSHIPPING_INPOST_HIKA_LOADING'));
@@ -269,8 +269,13 @@ class plgHikashopshippingInpost_hika extends hikashopShippingPlugin {
 		
 		// Sanityzacja parametrów mapy
 		$mapType = in_array($mapType, array('osm', 'google')) ? $mapType : 'osm';
-		$searchType = ($mapType === 'google' && !empty($googleApiKey)) ? 'google' : 'osm';
+		$searchType = $mapType; // searchType musi być zgodny z mapType
 		$googleApiKeyJs = addslashes($googleApiKey);
+		
+		// Domyślny zoom zależny od typu mapy jeśli nie ustawiony
+		if(empty($defaultZoom) || $defaultZoom == 0) {
+			$defaultZoom = ($mapType === 'google') ? 6 : 13;
+		}
 		
 		$script = "
 (function(){
