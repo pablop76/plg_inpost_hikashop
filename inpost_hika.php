@@ -8,8 +8,12 @@
 defined('_JEXEC') or die('Restricted access');
 
 class plgHikashopshippingInpost_hika extends hikashopShippingPlugin {
+	// Produkcja
 	const GEO_WIDGET_JS = 'https://geowidget.easypack24.net/js/sdk-for-javascript.js';
 	const GEO_WIDGET_CSS = 'https://geowidget.easypack24.net/css/easypack.css';
+	// Sandbox (testowe)
+	const GEO_WIDGET_JS_SANDBOX = 'https://sandbox-easy-geowidget-sdk.easypack24.net/js/sdk-for-javascript.js';
+	const GEO_WIDGET_CSS_SANDBOX = 'https://sandbox-easy-geowidget-sdk.easypack24.net/css/easypack.css';
 
 	var $multiple = true;
 	var $name = 'inpost_hika';
@@ -19,6 +23,10 @@ class plgHikashopshippingInpost_hika extends hikashopShippingPlugin {
 
 	// Definicja pól konfiguracyjnych dla HikaShop
 	var $pluginConfig = array(
+		'api_mode' => array('API_MODE', 'list', array(
+			'production' => 'Produkcja',
+			'sandbox' => 'Sandbox (testowe)'
+		)),
 		'map_type' => array('MAP_TYPE', 'list', array(
 			'osm' => 'OpenStreetMap',
 			'google' => 'Google Maps'
@@ -28,7 +36,8 @@ class plgHikashopshippingInpost_hika extends hikashopShippingPlugin {
 		'default_lng' => array('DEFAULT_LNG', 'input'),
 		'default_zoom' => array('DEFAULT_ZOOM', 'input'),
 		'show_parcel_lockers' => array('SHOW_PARCEL_LOCKERS', 'boolean', '1'),
-		'show_pops' => array('SHOW_POPS', 'boolean', '0')
+		'show_pops' => array('SHOW_POPS', 'boolean', '0'),
+		'debug' => array('INPOST_DEBUG', 'boolean', '0')
 	);
 
 	public function __construct(&$subject, $config) {
@@ -114,6 +123,7 @@ class plgHikashopshippingInpost_hika extends hikashopShippingPlugin {
 		$element->shipping_description = '';
 		$element->shipping_type = $this->name;
 		$element->shipping_params = new stdClass();
+		$element->shipping_params->api_mode = 'production';
 		$element->shipping_params->map_type = 'osm';
 		$element->shipping_params->google_api_key = '';
 		$element->shipping_params->default_lat = '52.2297';
@@ -121,6 +131,28 @@ class plgHikashopshippingInpost_hika extends hikashopShippingPlugin {
 		$element->shipping_params->default_zoom = ''; // pusty = automatyczny (OSM:13, Google:6)
 		$element->shipping_params->show_parcel_lockers = 1;
 		$element->shipping_params->show_pops = 0;
+		$element->shipping_params->debug = 0;
+	}
+
+	/**
+	 * Logowanie debug do pliku
+	 */
+	protected function debug($message, $data = null, $shippingParams = null) {
+		$debugEnabled = false;
+		if($shippingParams && isset($shippingParams->debug)) {
+			$debugEnabled = (bool)$shippingParams->debug;
+		}
+		if(!$debugEnabled) return;
+		
+		$logFile = JPATH_ROOT . '/logs/inpost_hika_debug.log';
+		$timestamp = date('Y-m-d H:i:s');
+		$logMessage = "[{$timestamp}] {$message}";
+		if($data !== null) {
+			$logMessage .= " | Data: " . json_encode($data, JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT);
+		}
+		$logMessage .= "\n";
+		
+		file_put_contents($logFile, $logMessage, FILE_APPEND | LOCK_EX);
 	}
 
 	public function shippingMethods(&$main) {
@@ -137,8 +169,20 @@ class plgHikashopshippingInpost_hika extends hikashopShippingPlugin {
 	public function onAfterOrderConfirm(&$order, &$methods, $method_id) {
 		parent::onAfterOrderConfirm($order, $methods, $method_id);
 		
+		// Pobierz shipping_params dla debug
+		$shippingParamsForDebug = null;
+		if(!empty($methods) && isset($methods[$method_id])) {
+			$shippingParamsForDebug = $methods[$method_id]->shipping_params ?? null;
+		}
+		
 		$app = JFactory::getApplication();
 		$selected = $app->getUserState('hikashop.inpost_locker', '');
+		
+		$this->debug('onAfterOrderConfirm', [
+			'order_id' => $order->order_id,
+			'method_id' => $method_id,
+			'selected_locker' => $selected
+		], $shippingParamsForDebug);
 		
 		if($selected !== '') {
 			$db = JFactory::getDbo();
@@ -150,6 +194,8 @@ class plgHikashopshippingInpost_hika extends hikashopShippingPlugin {
 				->where($db->quoteName('order_id') . ' = ' . (int)$order->order_id);
 			$db->setQuery($query);
 			$db->execute();
+			
+			$this->debug('Saved locker to DB', ['locker' => $selected, 'order_id' => $order->order_id], $shippingParamsForDebug);
 			
 			// Dodaj informację o paczkomacie do shipping_params (widoczne w panelu admina)
 			$shippingParams = new stdClass();
@@ -244,6 +290,7 @@ class plgHikashopshippingInpost_hika extends hikashopShippingPlugin {
 		</style>';
 		
 		// Pobierz parametry konfiguracji
+		$apiMode = isset($rate->shipping_params->api_mode) ? $rate->shipping_params->api_mode : 'production';
 		$showLockers = isset($rate->shipping_params->show_parcel_lockers) ? (int)$rate->shipping_params->show_parcel_lockers : 1;
 		$showPops = isset($rate->shipping_params->show_pops) ? (int)$rate->shipping_params->show_pops : 0;
 		$mapType = isset($rate->shipping_params->map_type) ? $rate->shipping_params->map_type : 'osm';
@@ -252,10 +299,10 @@ class plgHikashopshippingInpost_hika extends hikashopShippingPlugin {
 		$defaultLng = isset($rate->shipping_params->default_lng) ? (float)$rate->shipping_params->default_lng : 21.0122;
 		$defaultZoom = isset($rate->shipping_params->default_zoom) ? (int)$rate->shipping_params->default_zoom : 14;
 		
-		$this->addWidgetScript($widgetId, $shippingId, $showLockers, $showPops, $mapType, $googleApiKey, $defaultLat, $defaultLng, $defaultZoom);
+		$this->addWidgetScript($widgetId, $shippingId, $showLockers, $showPops, $mapType, $googleApiKey, $defaultLat, $defaultLng, $defaultZoom, $apiMode);
 	}
 
-	protected function addWidgetScript($widgetId, $shippingId, $showLockers = 1, $showPops = 0, $mapType = 'osm', $googleApiKey = '', $defaultLat = 52.2297, $defaultLng = 21.0122, $defaultZoom = 10) {
+	protected function addWidgetScript($widgetId, $shippingId, $showLockers = 1, $showPops = 0, $mapType = 'osm', $googleApiKey = '', $defaultLat = 52.2297, $defaultLng = 21.0122, $defaultZoom = 10, $apiMode = 'production') {
 		$doc = JFactory::getDocument();
 		$changeLabel = addslashes(JText::_('PLG_HIKASHOPSHIPPING_INPOST_HIKA_CHANGE'));
 		$loadingMsg = addslashes(JText::_('PLG_HIKASHOPSHIPPING_INPOST_HIKA_LOADING'));
@@ -272,6 +319,10 @@ class plgHikashopshippingInpost_hika extends hikashopShippingPlugin {
 		$searchType = $mapType; // searchType musi być zgodny z mapType
 		$googleApiKeyJs = addslashes($googleApiKey);
 		
+		// Wybierz URL SDK w zależności od trybu API
+		$sdkJs = ($apiMode === 'sandbox') ? self::GEO_WIDGET_JS_SANDBOX : self::GEO_WIDGET_JS;
+		$sdkCss = ($apiMode === 'sandbox') ? self::GEO_WIDGET_CSS_SANDBOX : self::GEO_WIDGET_CSS;
+		
 		// Domyślny zoom zależny od typu mapy jeśli nie ustawiony
 		if(empty($defaultZoom) || $defaultZoom == 0) {
 			$defaultZoom = ($mapType === 'google') ? 6 : 13;
@@ -280,8 +331,8 @@ class plgHikashopshippingInpost_hika extends hikashopShippingPlugin {
 		$script = "
 (function(){
 	var widgetId = '{$widgetId}';
-	var SDK_JS = '" . self::GEO_WIDGET_JS . "';
-	var SDK_CSS = '" . self::GEO_WIDGET_CSS . "';
+	var SDK_JS = '{$sdkJs}';
+	var SDK_CSS = '{$sdkCss}';
 	var pointTypes = {$typesJs};
 	var mapType = '{$mapType}';
 	var searchType = '{$searchType}';
@@ -292,7 +343,7 @@ class plgHikashopshippingInpost_hika extends hikashopShippingPlugin {
 	var pendingOpen = false;
 	
 	// Dodaj CSS od razu
-	if(!document.querySelector('link[href*=\"geowidget\"]')){
+	if(!document.querySelector('link[href*=\"geowidget\"]') && !document.querySelector('link[href*=\"sandbox-easy-geowidget\"]')){
 		var link = document.createElement('link');
 		link.rel = 'stylesheet';
 		link.href = SDK_CSS;

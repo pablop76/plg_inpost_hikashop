@@ -10,7 +10,9 @@ Plugin wysyłkowy dla HikaShop (Joomla) integrujący InPost Paczkomaty z mapą G
 - ✅ Walidacja - blokada zamówienia bez wybranego punktu
 - ✅ Wyświetlanie paczkomatu w panelu admina (szczegóły zamówienia)
 - ✅ Konfiguracja typu mapy: OpenStreetMap lub Google Maps
-- ✅ Konfigurowalne współrzędne i zoom mapy
+- ✅ Konfigurowalne współrzędne i zoom mapy (automatyczny zoom dla każdego typu mapy)
+- ✅ Tryb Sandbox/Produkcja (przygotowanie pod ShipX API)
+- ✅ Tryb debug (logowanie do pliku)
 
 ## Wymagania
 
@@ -33,16 +35,26 @@ Plugin wysyłkowy dla HikaShop (Joomla) integrujący InPost Paczkomaty z mapą G
 
 | Opcja | Opis | Domyślnie |
 |-------|------|-----------|
+| Tryb API | Produkcja lub Sandbox (testowe) | Produkcja |
 | Typ mapy | OpenStreetMap lub Google Maps | OSM |
 | Klucz API Google | Wymagany dla Google Maps | - |
 | Szerokość geogr. (lat) | Domyślna pozycja mapy | 52.2297 |
 | Długość geogr. (lng) | Domyślna pozycja mapy | 21.0122 |
-| Domyślny zoom | Poziom przybliżenia | 14 |
+| Domyślny zoom | Poziom przybliżenia (pusty = auto) | auto |
 | Pokaż paczkomaty | Włącz paczkomaty | Tak |
 | Pokaż punkty POP | Włącz punkty POP | Nie |
+| Tryb debug | Logowanie do pliku | Nie |
 
 4. Ustaw cenę wysyłki, strefę i inne standardowe opcje HikaShop
 5. Zapisz
+
+### Automatyczny zoom mapy
+
+Gdy pole "Domyślny zoom" jest puste, plugin automatycznie dobiera zoom:
+- **OpenStreetMap**: zoom 13
+- **Google Maps**: zoom 6
+
+Możesz też wpisać własną wartość (1-20).
 
 ## Użycie Google Maps
 
@@ -50,6 +62,15 @@ Plugin wysyłkowy dla HikaShop (Joomla) integrujący InPost Paczkomaty z mapą G
 2. Włącz Maps JavaScript API
 3. Wklej klucz w ustawieniach pluginu
 4. Zmień "Typ mapy" na "Google Maps"
+
+## Tryb Debug
+
+Gdy włączony, plugin zapisuje logi do pliku:
+```
+/logs/inpost_hika_debug.log
+```
+
+Logowane są: wybór paczkomatu, zapis do bazy, potwierdzenie zamówienia.
 
 ## Baza danych
 
@@ -64,15 +85,21 @@ plg_inpost_hika/
 ├── index.html               # Plik bezpieczeństwa
 ├── language/
 │   ├── en-GB/
-│   │   ├── plg_hikashopshipping_inpost_hika.ini
-│   │   └── plg_hikashopshipping_inpost_hika.sys.ini
+│   │   ├── en-GB.plg_hikashopshipping_inpost_hika.ini
+│   │   └── en-GB.plg_hikashopshipping_inpost_hika.sys.ini
 │   └── pl-PL/
-│       ├── plg_hikashopshipping_inpost_hika.ini
-│       └── plg_hikashopshipping_inpost_hika.sys.ini
+│       ├── pl-PL.plg_hikashopshipping_inpost_hika.ini
+│       └── pl-PL.plg_hikashopshipping_inpost_hika.sys.ini
 └── README.md
 ```
 
 ## Changelog
+
+### v2.1.0 (2026-01-13)
+- Dodano tryb API (Produkcja/Sandbox) - przygotowanie pod ShipX
+- Dodano tryb debug (logowanie do pliku)
+- Automatyczny zoom mapy zależny od typu (OSM:13, Google:6)
+- Poprawki tłumaczeń
 
 ### v2.0.0 (2026-01-12)
 - Dodano wybór typu mapy (OSM/Google)
