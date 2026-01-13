@@ -442,6 +442,10 @@ class plgHikashopshippingInpost_hika extends hikashopShippingPlugin {
 			return 'Błąd autoryzacji: Token API jest nieprawidłowy lub wygasł.';
 		}
 		
+		if($error === 'token_invalid') {
+			return 'Błąd: Token API jest nieprawidłowy. Sprawdź czy wkleiłeś poprawny token z Managera Paczek InPost (Moje konto → API). Upewnij się że używasz tokenu z właściwego środowiska (Produkcja/Sandbox).';
+		}
+		
 		// Domyślny komunikat
 		return 'Błąd tworzenia przesyłki: ' . $error . ($description ? ' - ' . $description : '') . ($details ? ' ' . $details : '');
 	}
