@@ -8,12 +8,17 @@
 defined('_JEXEC') or die('Restricted access');
 
 class plgHikashopshippingInpost_hika extends hikashopShippingPlugin {
-	// Produkcja
+	// GeoWidget - Produkcja
 	const GEO_WIDGET_JS = 'https://geowidget.easypack24.net/js/sdk-for-javascript.js';
 	const GEO_WIDGET_CSS = 'https://geowidget.easypack24.net/css/easypack.css';
-	// Sandbox (testowe)
+	// GeoWidget - Sandbox (testowe)
 	const GEO_WIDGET_JS_SANDBOX = 'https://sandbox-easy-geowidget-sdk.easypack24.net/js/sdk-for-javascript.js';
 	const GEO_WIDGET_CSS_SANDBOX = 'https://sandbox-easy-geowidget-sdk.easypack24.net/css/easypack.css';
+	
+	// ShipX API - Produkcja
+	const SHIPX_API_URL = 'https://api-shipx-pl.easypack24.net';
+	// ShipX API - Sandbox
+	const SHIPX_API_URL_SANDBOX = 'https://sandbox-api-shipx-pl.easypack24.net';
 
 	var $multiple = true;
 	var $name = 'inpost_hika';
@@ -27,6 +32,25 @@ class plgHikashopshippingInpost_hika extends hikashopShippingPlugin {
 			'production' => 'Produkcja',
 			'sandbox' => 'Sandbox (testowe)'
 		)),
+		// ShipX API
+		'shipx_token' => array('SHIPX_TOKEN', 'input'),
+		'shipx_organization_id' => array('SHIPX_ORGANIZATION_ID', 'input'),
+		// Dane nadawcy (wymagane do tworzenia przesyłek)
+		'sender_name' => array('SENDER_NAME', 'input'),
+		'sender_company' => array('SENDER_COMPANY', 'input'),
+		'sender_email' => array('SENDER_EMAIL', 'input'),
+		'sender_phone' => array('SENDER_PHONE', 'input'),
+		'sender_street' => array('SENDER_STREET', 'input'),
+		'sender_building' => array('SENDER_BUILDING', 'input'),
+		'sender_city' => array('SENDER_CITY', 'input'),
+		'sender_postcode' => array('SENDER_POSTCODE', 'input'),
+		// Domyślny rozmiar paczki
+		'default_parcel_size' => array('DEFAULT_PARCEL_SIZE', 'list', array(
+			'small' => 'Mała (A)',
+			'medium' => 'Średnia (B)',
+			'large' => 'Duża (C)'
+		)),
+		// Mapa GeoWidget
 		'map_type' => array('MAP_TYPE', 'list', array(
 			'osm' => 'OpenStreetMap',
 			'google' => 'Google Maps'
@@ -65,6 +89,9 @@ class plgHikashopshippingInpost_hika extends hikashopShippingPlugin {
 			return;
 		}
 		
+		// Obsługa akcji AJAX (tworzenie przesyłki, pobieranie etykiety)
+		$this->handleAdminAjaxActions($order);
+		
 		// Sprawdź czy zamówienie ma metodę InPost
 		if(empty($order->order_shipping_method) || $order->order_shipping_method !== $this->name) {
 			return;
@@ -89,13 +116,363 @@ class plgHikashopshippingInpost_hika extends hikashopShippingPlugin {
 			return;
 		}
 		
+		// Pobierz shipping_params dla konfiguracji ShipX
+		$shippingParams = $this->getShippingParamsForOrder($order);
+		
+		// Pobierz shipment_id z bazy (jeśli już utworzono przesyłkę)
+		$db = JFactory::getDbo();
+		$query = $db->getQuery(true)
+			->select($db->quoteName('inpost_shipment_id'))
+			->from($db->quoteName('#__hikashop_order'))
+			->where($db->quoteName('order_id') . ' = ' . (int)$order->order_id);
+		$db->setQuery($query);
+		$shipmentId = $db->loadResult();
+		
 		$label = JText::_('PLG_HIKASHOPSHIPPING_INPOST_HIKA_FIELD_LABEL');
 		
 		// Wyświetl HTML bezpośrednio (echo) - to jest wywoływane w trakcie renderowania
 		echo '<div id="inpost_locker_info" style="background:#fff3cd; border:2px solid #ffc107; padding:15px; margin:15px 0; border-radius:8px; font-size:14px;">';
 		echo '<strong style="color:#856404; font-size:16px;">📦 ' . htmlspecialchars($label) . ':</strong><br>';
 		echo '<span style="color:#333; font-size:15px; font-weight:bold;">' . htmlspecialchars($locker) . '</span>';
+		
+		// Pobierz tylko nazwę paczkomatu (pierwszy element przed " - ")
+		$lockerName = $locker;
+		if(strpos($locker, ' - ') !== false) {
+			$lockerName = trim(explode(' - ', $locker)[0]);
+		}
+		
+		// Sekcja ShipX API
+		echo '<div style="margin-top:15px; padding-top:15px; border-top:1px solid #ffc107;">';
+		echo '<strong style="color:#856404;">🚚 InPost ShipX:</strong><br>';
+		
+		if(!empty($shipmentId)) {
+			// Przesyłka już utworzona
+			echo '<span style="color:#28a745; font-weight:bold;">✅ ' . JText::_('PLG_HIKASHOPSHIPPING_INPOST_HIKA_SHIPMENT_CREATED') . ': ' . htmlspecialchars($shipmentId) . '</span><br>';
+			echo '<a href="' . JUri::current() . '&inpost_action=get_label&order_id=' . (int)$order->order_id . '" class="btn btn-small btn-success" style="margin-top:10px; background:#28a745; color:#fff; padding:8px 15px; border-radius:4px; text-decoration:none;">';
+			echo '📄 ' . JText::_('PLG_HIKASHOPSHIPPING_INPOST_HIKA_DOWNLOAD_LABEL');
+			echo '</a>';
+		} else {
+			// Sprawdź czy skonfigurowano API
+			$hasApiConfig = !empty($shippingParams->shipx_token) && !empty($shippingParams->shipx_organization_id);
+			
+			if($hasApiConfig) {
+				echo '<form method="post" style="display:inline;">';
+				echo '<input type="hidden" name="inpost_action" value="create_shipment" />';
+				echo '<input type="hidden" name="order_id" value="' . (int)$order->order_id . '" />';
+				echo '<input type="hidden" name="locker_name" value="' . htmlspecialchars($lockerName) . '" />';
+				echo JHtml::_('form.token');
+				echo '<button type="submit" class="btn btn-small btn-primary" style="background:#007bff; color:#fff; padding:8px 15px; border-radius:4px; border:none; cursor:pointer;">';
+				echo '📦 ' . JText::_('PLG_HIKASHOPSHIPPING_INPOST_HIKA_CREATE_SHIPMENT');
+				echo '</button>';
+				echo '</form>';
+			} else {
+				echo '<span style="color:#dc3545;">⚠️ ' . JText::_('PLG_HIKASHOPSHIPPING_INPOST_HIKA_API_NOT_CONFIGURED') . '</span>';
+			}
+		}
 		echo '</div>';
+		echo '</div>';
+	}
+	
+	/**
+	 * Obsługa akcji AJAX w panelu admina (tworzenie przesyłki, pobieranie etykiety)
+	 */
+	protected function handleAdminAjaxActions($order) {
+		$app = JFactory::getApplication();
+		$input = $app->input;
+		
+		$action = $input->getString('inpost_action', '');
+		$orderId = $input->getInt('order_id', 0);
+		
+		if(empty($action) || $orderId !== (int)$order->order_id) {
+			return;
+		}
+		
+		// Weryfikuj token dla POST
+		if($action === 'create_shipment') {
+			JSession::checkToken() or die('Invalid Token');
+		}
+		
+		$shippingParams = $this->getShippingParamsForOrder($order);
+		
+		switch($action) {
+			case 'create_shipment':
+				$lockerName = $input->getString('locker_name', '');
+				$this->handleCreateShipment($order, $lockerName, $shippingParams);
+				break;
+				
+			case 'get_label':
+				$this->handleGetLabel($order, $shippingParams);
+				break;
+		}
+	}
+	
+	/**
+	 * Tworzy przesyłkę w ShipX API
+	 */
+	protected function handleCreateShipment($order, $lockerName, $shippingParams) {
+		$app = JFactory::getApplication();
+		
+		// Pobierz dane odbiorcy z zamówienia
+		$db = JFactory::getDbo();
+		$query = $db->getQuery(true)
+			->select('a.*, u.user_email')
+			->from($db->quoteName('#__hikashop_address', 'a'))
+			->leftJoin($db->quoteName('#__hikashop_user', 'u') . ' ON u.user_id = a.address_user_id')
+			->where($db->quoteName('a.address_id') . ' = ' . (int)$order->order_shipping_address_id);
+		$db->setQuery($query);
+		$address = $db->loadObject();
+		
+		if(!$address) {
+			$app->enqueueMessage('Błąd: Nie znaleziono adresu dostawy', 'error');
+			return;
+		}
+		
+		// Przygotuj dane przesyłki dla API
+		$shipmentData = array(
+			'receiver' => array(
+				'name' => trim($address->address_firstname . ' ' . $address->address_lastname),
+				'company_name' => $address->address_company ?? '',
+				'first_name' => $address->address_firstname,
+				'last_name' => $address->address_lastname,
+				'email' => $address->user_email ?? '',
+				'phone' => $address->address_telephone ?? ''
+			),
+			'sender' => array(
+				'name' => $shippingParams->sender_name ?? '',
+				'company_name' => $shippingParams->sender_company ?? '',
+				'email' => $shippingParams->sender_email ?? '',
+				'phone' => $shippingParams->sender_phone ?? '',
+				'address' => array(
+					'street' => $shippingParams->sender_street ?? '',
+					'building_number' => $shippingParams->sender_building ?? '',
+					'city' => $shippingParams->sender_city ?? '',
+					'post_code' => $shippingParams->sender_postcode ?? '',
+					'country_code' => 'PL'
+				)
+			),
+			'parcels' => array(
+				array(
+					'template' => $shippingParams->default_parcel_size ?? 'small'
+				)
+			),
+			'service' => 'inpost_locker_standard',
+			'reference' => 'Zamówienie #' . $order->order_id,
+			'custom_attributes' => array(
+				'target_point' => $lockerName,
+				'sending_method' => 'dispatch_order'
+			)
+		);
+		
+		$this->debug('Creating shipment', $shipmentData, $shippingParams);
+		
+		// Wywołaj API
+		$result = $this->callShipXApi(
+			'POST',
+			'/v1/organizations/' . $shippingParams->shipx_organization_id . '/shipments',
+			$shipmentData,
+			$shippingParams
+		);
+		
+		if($result && isset($result->id)) {
+			// Sukces - zapisz shipment_id w bazie
+			$this->ensureShipmentIdFieldExists();
+			
+			$query = $db->getQuery(true)
+				->update($db->quoteName('#__hikashop_order'))
+				->set($db->quoteName('inpost_shipment_id') . ' = ' . $db->quote($result->id))
+				->where($db->quoteName('order_id') . ' = ' . (int)$order->order_id);
+			$db->setQuery($query);
+			$db->execute();
+			
+			$this->debug('Shipment created successfully', ['shipment_id' => $result->id], $shippingParams);
+			
+			// Teraz kup ofertę (zakup etykiety)
+			$this->buyShipmentOffer($result->id, $shippingParams);
+			
+			$app->enqueueMessage('Przesyłka InPost utworzona pomyślnie! ID: ' . $result->id, 'success');
+			$app->redirect(JUri::current());
+		} else {
+			$errorMsg = isset($result->error) ? $result->error : 'Nieznany błąd';
+			$errorDesc = isset($result->description) ? $result->description : '';
+			$errorDetails = isset($result->details) ? json_encode($result->details) : '';
+			
+			$this->debug('Shipment creation failed', [
+				'error' => $errorMsg,
+				'description' => $errorDesc,
+				'details' => $errorDetails
+			], $shippingParams);
+			
+			$app->enqueueMessage('Błąd tworzenia przesyłki: ' . $errorMsg . ' - ' . $errorDesc . ' ' . $errorDetails, 'error');
+		}
+	}
+	
+	/**
+	 * Kupuje ofertę przesyłki (aktywuje etykietę)
+	 */
+	protected function buyShipmentOffer($shipmentId, $shippingParams) {
+		// Najpierw pobierz dostępne oferty
+		$result = $this->callShipXApi(
+			'GET',
+			'/v1/shipments/' . $shipmentId . '/offers',
+			null,
+			$shippingParams
+		);
+		
+		$this->debug('Got offers for shipment', $result, $shippingParams);
+		
+		// Kup pierwszą dostępną ofertę
+		if($result && !empty($result->items)) {
+			foreach($result->items as $offer) {
+				if($offer->status === 'available') {
+					$buyResult = $this->callShipXApi(
+						'POST',
+						'/v1/shipments/' . $shipmentId . '/buy',
+						array('offer_id' => $offer->id),
+						$shippingParams
+					);
+					
+					$this->debug('Buy offer result', $buyResult, $shippingParams);
+					return $buyResult;
+				}
+			}
+		}
+		
+		return null;
+	}
+	
+	/**
+	 * Pobiera etykietę przesyłki
+	 */
+	protected function handleGetLabel($order, $shippingParams) {
+		$db = JFactory::getDbo();
+		$query = $db->getQuery(true)
+			->select($db->quoteName('inpost_shipment_id'))
+			->from($db->quoteName('#__hikashop_order'))
+			->where($db->quoteName('order_id') . ' = ' . (int)$order->order_id);
+		$db->setQuery($query);
+		$shipmentId = $db->loadResult();
+		
+		if(empty($shipmentId)) {
+			JFactory::getApplication()->enqueueMessage('Brak ID przesyłki', 'error');
+			return;
+		}
+		
+		$this->debug('Getting label for shipment', ['shipment_id' => $shipmentId], $shippingParams);
+		
+		// Pobierz etykietę jako PDF
+		$labelData = $this->callShipXApi(
+			'GET',
+			'/v1/shipments/' . $shipmentId . '/label?format=pdf&type=normal',
+			null,
+			$shippingParams,
+			true // raw response (PDF)
+		);
+		
+		if($labelData) {
+			// Zwróć PDF do przeglądarki
+			header('Content-Type: application/pdf');
+			header('Content-Disposition: attachment; filename="inpost_label_' . $shipmentId . '.pdf"');
+			header('Content-Length: ' . strlen($labelData));
+			echo $labelData;
+			exit;
+		} else {
+			JFactory::getApplication()->enqueueMessage('Błąd pobierania etykiety. Przesyłka może nie być jeszcze opłacona.', 'error');
+		}
+	}
+	
+	/**
+	 * Wywołuje ShipX API
+	 */
+	protected function callShipXApi($method, $endpoint, $data = null, $shippingParams = null, $rawResponse = false) {
+		$apiMode = $shippingParams->api_mode ?? 'production';
+		$baseUrl = ($apiMode === 'sandbox') ? self::SHIPX_API_URL_SANDBOX : self::SHIPX_API_URL;
+		$token = $shippingParams->shipx_token ?? '';
+		
+		$url = $baseUrl . $endpoint;
+		
+		$this->debug('ShipX API Call', [
+			'method' => $method,
+			'url' => $url,
+			'data' => $data
+		], $shippingParams);
+		
+		$ch = curl_init();
+		
+		$headers = array(
+			'Authorization: Bearer ' . $token,
+			'Content-Type: application/json',
+			'Accept: application/json'
+		);
+		
+		curl_setopt($ch, CURLOPT_URL, $url);
+		curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+		curl_setopt($ch, CURLOPT_HTTPHEADER, $headers);
+		curl_setopt($ch, CURLOPT_TIMEOUT, 30);
+		curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, true);
+		
+		if($method === 'POST') {
+			curl_setopt($ch, CURLOPT_POST, true);
+			if($data) {
+				curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode($data));
+			}
+		}
+		
+		$response = curl_exec($ch);
+		$httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+		$error = curl_error($ch);
+		
+		curl_close($ch);
+		
+		$this->debug('ShipX API Response', [
+			'http_code' => $httpCode,
+			'error' => $error,
+			'response_length' => strlen($response)
+		], $shippingParams);
+		
+		if($error) {
+			$this->debug('CURL Error', $error, $shippingParams);
+			return null;
+		}
+		
+		if($rawResponse) {
+			return ($httpCode >= 200 && $httpCode < 300) ? $response : null;
+		}
+		
+		return json_decode($response);
+	}
+	
+	/**
+	 * Pobiera parametry shipping dla zamówienia
+	 */
+	protected function getShippingParamsForOrder($order) {
+		$db = JFactory::getDbo();
+		$query = $db->getQuery(true)
+			->select($db->quoteName('shipping_params'))
+			->from($db->quoteName('#__hikashop_shipping'))
+			->where($db->quoteName('shipping_type') . ' = ' . $db->quote($this->name))
+			->where($db->quoteName('shipping_published') . ' = 1')
+			->setLimit(1);
+		$db->setQuery($query);
+		$result = $db->loadResult();
+		
+		if($result) {
+			return unserialize($result);
+		}
+		
+		return new stdClass();
+	}
+	
+	/**
+	 * Upewnia się że kolumna inpost_shipment_id istnieje
+	 */
+	protected function ensureShipmentIdFieldExists() {
+		$db = JFactory::getDbo();
+		$columns = $db->getTableColumns('#__hikashop_order');
+		
+		if(!isset($columns['inpost_shipment_id'])) {
+			$db->setQuery('ALTER TABLE ' . $db->quoteName('#__hikashop_order') . ' ADD ' . $db->quoteName('inpost_shipment_id') . ' VARCHAR(50) NULL');
+			$db->execute();
+		}
 	}
 
 	public function onShippingDisplay(&$order, &$dbrates, &$usable_rates, &$messages) {
@@ -124,6 +501,20 @@ class plgHikashopshippingInpost_hika extends hikashopShippingPlugin {
 		$element->shipping_type = $this->name;
 		$element->shipping_params = new stdClass();
 		$element->shipping_params->api_mode = 'production';
+		// ShipX API
+		$element->shipping_params->shipx_token = '';
+		$element->shipping_params->shipx_organization_id = '';
+		// Dane nadawcy
+		$element->shipping_params->sender_name = '';
+		$element->shipping_params->sender_company = '';
+		$element->shipping_params->sender_email = '';
+		$element->shipping_params->sender_phone = '';
+		$element->shipping_params->sender_street = '';
+		$element->shipping_params->sender_building = '';
+		$element->shipping_params->sender_city = '';
+		$element->shipping_params->sender_postcode = '';
+		$element->shipping_params->default_parcel_size = 'small';
+		// Mapa GeoWidget
 		$element->shipping_params->map_type = 'osm';
 		$element->shipping_params->google_api_key = '';
 		$element->shipping_params->default_lat = '52.2297';
