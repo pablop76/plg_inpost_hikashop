@@ -9,20 +9,20 @@
 	<authorUrl>https://example.com</authorUrl>
 	<version>3.0.0</version>
 	<description>PLG_HIKASHOPSHIPPING_INPOST_HIKA_DESC</description>
-	
+
 	<files>
 		<filename plugin="inpost_hika">inpost_hika.php</filename>
 		<filename>index.html</filename>
 		<folder>language</folder>
 	</files>
-	
+
 	<languages>
 		<language tag="en-GB">language/en-GB/en-GB.plg_hikashopshipping_inpost_hika.ini</language>
 		<language tag="en-GB">language/en-GB/en-GB.plg_hikashopshipping_inpost_hika.sys.ini</language>
 		<language tag="pl-PL">language/pl-PL/pl-PL.plg_hikashopshipping_inpost_hika.ini</language>
 		<language tag="pl-PL">language/pl-PL/pl-PL.plg_hikashopshipping_inpost_hika.sys.ini</language>
 	</languages>
-	
+
 	<config>
 		<fields name="params">
 			<fieldset name="basic">

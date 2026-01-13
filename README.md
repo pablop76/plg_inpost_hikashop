@@ -5,6 +5,7 @@ Plugin wysłykowy dla HikaShop (Joomla) integrujący InPost Paczkomaty z mapą G
 ## Funkcje
 
 ### Wybór paczkomatu (Frontend)
+
 - ✅ Wybór paczkomatu na mapie (GeoWidget SDK)
 - ✅ Obsługa paczkomatow i punktów POP
 - ✅ Zapis wybranego paczkomatu w zamówieniu
@@ -13,6 +14,7 @@ Plugin wysłykowy dla HikaShop (Joomla) integrujący InPost Paczkomaty z mapą G
 - ✅ Konfigurowalne współrzędne i zoom mapy
 
 ### ShipX API (Admin - tworzenie przesyłek)
+
 - ✅ Tworzenie przesyłki InPost bezpośrednio z panelu zamówienia
 - ✅ Automatyczne pobieranie danych odbiorcy z zamówienia
 - ✅ Konfigurowalne dane nadawcy
@@ -21,6 +23,7 @@ Plugin wysłykowy dla HikaShop (Joomla) integrujący InPost Paczkomaty z mapą G
 - ✅ Obsługa środowiska Sandbox (testowe) i Produkcji
 
 ### Inne
+
 - ✅ Wyświetlanie paczkomatu w panelu admina (szczegóły zamówienia)
 - ✅ Tryb debug (logowanie do pliku)
 
@@ -45,38 +48,38 @@ Plugin wysłykowy dla HikaShop (Joomla) integrujący InPost Paczkomaty z mapą G
 
 ### Ustawienia API
 
-| Opcja | Opis | Domyslnie |
-|-------|------|--------|
-| Tryb API | Produkcja lub Sandbox (testowe) | Produkcja |
-| Token ShipX API | Token autoryzacyjny z Managerów Paczek | - |
-| ID organizacji ShipX | ID organizacji z Managera Paczek | - |
+| Opcja                | Opis                                   | Domyslnie |
+| -------------------- | -------------------------------------- | --------- |
+| Tryb API             | Produkcja lub Sandbox (testowe)        | Produkcja |
+| Token ShipX API      | Token autoryzacyjny z Managerów Paczek | -         |
+| ID organizacji ShipX | ID organizacji z Managera Paczek       | -         |
 
 ### Dane nadawcy (wymagane do tworzenia przesyłek)
 
-| Opcja | Opis |
-|-------|------|
-| Imię i nazwisko nadawcy | Wymagane |
-| Nazwa firmy nadawcy | Opcjonalne |
-| Email nadawcy | Wymagane |
-| Telefon nadawcy | Wymagane |
-| Ulica nadawcy | Wymagane |
-| Numer budynku | Wymagane |
-| Miasto | Wymagane |
-| Kod pocztowy | Wymagane |
+| Opcja                   | Opis                              |
+| ----------------------- | --------------------------------- |
+| Imię i nazwisko nadawcy | Wymagane                          |
+| Nazwa firmy nadawcy     | Opcjonalne                        |
+| Email nadawcy           | Wymagane                          |
+| Telefon nadawcy         | Wymagane                          |
+| Ulica nadawcy           | Wymagane                          |
+| Numer budynku           | Wymagane                          |
+| Miasto                  | Wymagane                          |
+| Kod pocztowy            | Wymagane                          |
 | Domyślny rozmiar paczki | Mała (A) / Średnia (B) / Duża (C) |
 
 ### Ustawienia mapy
 
-| Opcja | Opis | Domyslnie |
-|-------|------|--------|
-| Typ mapy | OpenStreetMap lub Google Maps | OSM |
-| Klucz API Google | Wymagany dla Google Maps | - |
-| Szerokość geogr. (lat) | Domyślna pozycja mapy | 52.2297 |
-| Długość geogr. (lng) | Domyślna pozycja mapy | 21.0122 |
-| Domyślny zoom | Poziom przybliżenia (pusty = auto) | auto |
-| Pokaż paczkomaty | Włącz paczkomaty | Tak |
-| Pokaż punkty POP | Włącz punkty POP | Nie |
-| Tryb debug | Logowanie do pliku | Nie |
+| Opcja                  | Opis                               | Domyslnie |
+| ---------------------- | ---------------------------------- | --------- |
+| Typ mapy               | OpenStreetMap lub Google Maps      | OSM       |
+| Klucz API Google       | Wymagany dla Google Maps           | -         |
+| Szerokość geogr. (lat) | Domyślna pozycja mapy              | 52.2297   |
+| Długość geogr. (lng)   | Domyślna pozycja mapy              | 21.0122   |
+| Domyślny zoom          | Poziom przybliżenia (pusty = auto) | auto      |
+| Pokaż paczkomaty       | Włącz paczkomaty                   | Tak       |
+| Pokaż punkty POP       | Włącz punkty POP                   | Nie       |
+| Tryb debug             | Logowanie do pliku                 | Nie       |
 
 4. Ustaw cenę wysyłki, strefę i inne standardowe opcje HikaShop
 5. Zapisz
@@ -84,6 +87,7 @@ Plugin wysłykowy dla HikaShop (Joomla) integrujący InPost Paczkomaty z mapą G
 ### Automatyczny zoom mapy
 
 Gdy pole "Domyślny zoom" jest puste, plugin automatycznie dobiera zoom:
+
 - **OpenStreetMap**: zoom 13
 - **Google Maps**: zoom 6
 
@@ -94,6 +98,7 @@ Możesz też wpisać własną wartość (1-20).
 ### Pobranie danych autoryzacyjnych
 
 #### Środowisko Sandbox (testowe)
+
 1. Zarejestruj się na: https://sandbox-manager.paczkomaty.pl/
 2. Uzupełnij wszystkie dane (Moje konto → Dane)
 3. Przejdź do: Moje konto → API
@@ -101,6 +106,7 @@ Możesz też wpisać własną wartość (1-20).
 5. Doładuj konto wirtualnie w zakładce Płatności
 
 #### Środowisko Produkcyjne
+
 1. Zaloguj się na: https://manager.paczkomaty.pl/
 2. Przejdź do: Moje konto → API
 3. Skopiuj **Token** i **ID organizacji**
@@ -108,17 +114,25 @@ Możesz też wpisać własną wartość (1-20).
 ### Tworzenie przesyłki
 
 1. Przejdź do szczegółów zamówienia w HikaShop
-2. Jeśli zamówienie ma wysyłkę InPost, zobaczysz sekcję "InPost ShipX"
+2. Jeśli zamówienie ma wysyłkę InPost, zobaczysz sekcję "InPost ShipX (Admin)"
 3. Kliknij **"Utwórz przesyłkę InPost"**
-4. Po utworzeniu pojawi się przycisk **"Pobierz etykietę"**
+4. Jeśli zamówienie ma status "confirmed" - przesyłka zostanie automatycznie opłacona
+5. Jeśli zamówienie nie jest potwierdzone - kliknij **"Opłać przesyłkę"** gdy będzie gotowe
+6. Po opłaceniu pojawi się przycisk **"Pobierz etykietę"**
+
+### Logika opłacania
+
+- Przesyłka tworzona dla **potwierdzonego** zamówienia → automatycznie opłacana
+- Przesyłka tworzona dla **niepotwierdzonego** zamówienia → wymaga ręcznego opłacenia
+- Etykieta PDF dostępna tylko dla **opłaconych** przesyłek
 
 ### Obsługiwane rozmiary paczek
 
-| Rozmiar | Wymiary (dł/szer/wys) | Waga max |
-|---------|------------------------|----------|
-| Mała (A) | 380 x 640 x 80 mm | 25 kg |
-| Średnia (B) | 380 x 640 x 190 mm | 25 kg |
-| Duża (C) | 410 x 380 x 640 mm | 25 kg |
+| Rozmiar     | Wymiary (dł/szer/wys) | Waga max |
+| ----------- | --------------------- | -------- |
+| Mała (A)    | 380 x 640 x 80 mm     | 25 kg    |
+| Średnia (B) | 380 x 640 x 190 mm    | 25 kg    |
+| Duża (C)    | 410 x 380 x 640 mm    | 25 kg    |
 
 ## Użycie Google Maps
 
@@ -130,6 +144,7 @@ Możesz też wpisać własną wartość (1-20).
 ## Tryb Debug
 
 Gdy włączony, plugin zapisuje logi do pliku:
+
 ```
 /logs/inpost_hika_debug.log
 ```
@@ -139,6 +154,7 @@ Logowane są: wybór paczkomatu, zapis do bazy, potwierdzenie zamówienia, wywo�
 ## Baza danych
 
 Plugin automatycznie tworzy kolumny w tabeli `#__hikashop_order`:
+
 - `inpost_locker` - nazwa wybranego paczkomatu
 - `inpost_shipment_id` - ID przesyłki w ShipX (po utworzeniu)
 
@@ -162,21 +178,27 @@ plg_inpost_hika/
 ## Changelog
 
 ### v3.0.0 (2026-01-13)
+
 - **NOWOŚĆ**: Pełna integracja ShipX API
 - Tworzenie przesyłek InPost z panelu admina
+- Opłacanie przesyłek (automatyczne dla potwierdzonych zamówień)
 - Pobieranie etykiet PDF
 - Konfiguracja danych nadawcy
 - Wybór domyślnego rozmiaru paczki
 - Automatyczne łączenie z danymi odbiorcy z zamówienia
 - Obsługa środowiska Sandbox i Produkcji
+- Przyjazne komunikaty błędów (np. nieistniejący paczkomat)
+- Sekcja ShipX widoczna tylko w adminie (nie w emailach do klienta)
 
 ### v2.1.0 (2026-01-13)
+
 - Dodano tryb API (Produkcja/Sandbox) - przygotowanie pod ShipX
 - Dodano tryb debug (logowanie do pliku)
 - Automatyczny zoom mapy zależny od typu (OSM:13, Google:6)
 - Poprawki tłumaczeń
 
 ### v2.0.0 (2026-01-12)
+
 - Dodano wybór typu mapy (OSM/Google)
 - Dodano konfigurację domyślnej lokalizacji i zoom
 - Dodano konfigurację typów punktów (paczkomaty/POP)
@@ -184,6 +206,7 @@ plg_inpost_hika/
 - Walidacja wyboru przed złożeniem zamówienia
 
 ### v1.0.0
+
 - Pierwsza wersja z podstawową funkcjonalnością
 
 ## Licencja
@@ -192,4 +215,4 @@ GNU/GPLv3 - http://www.gnu.org/licenses/gpl-3.0.html
 
 ## Autor
 
-Developer - https://example.com
+Paweł Półtoraczyk - https://github.com/pablop76

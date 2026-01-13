@@ -8,12 +8,9 @@
 defined('_JEXEC') or die('Restricted access');
 
 class plgHikashopshippingInpost_hika extends hikashopShippingPlugin {
-	// GeoWidget - Produkcja
+	// GeoWidget SDK - zawsze produkcja (mapa nie wymaga autoryzacji)
 	const GEO_WIDGET_JS = 'https://geowidget.easypack24.net/js/sdk-for-javascript.js';
 	const GEO_WIDGET_CSS = 'https://geowidget.easypack24.net/css/easypack.css';
-	// GeoWidget - Sandbox (testowe)
-	const GEO_WIDGET_JS_SANDBOX = 'https://sandbox-easy-geowidget-sdk.easypack24.net/js/sdk-for-javascript.js';
-	const GEO_WIDGET_CSS_SANDBOX = 'https://sandbox-easy-geowidget-sdk.easypack24.net/css/easypack.css';
 	
 	// ShipX API - Produkcja
 	const SHIPX_API_URL = 'https://api-shipx-pl.easypack24.net';
@@ -33,17 +30,17 @@ class plgHikashopshippingInpost_hika extends hikashopShippingPlugin {
 			'sandbox' => 'Sandbox (testowe)'
 		)),
 		// ShipX API
-		'shipx_token' => array('SHIPX_TOKEN', 'input'),
-		'shipx_organization_id' => array('SHIPX_ORGANIZATION_ID', 'input'),
+		'shipx_token' => array('SHIPX_TOKEN', 'textarea'),
+		'shipx_organization_id' => array('SHIPX_ORGANIZATION_ID', 'input', ''),
 		// Dane nadawcy (wymagane do tworzenia przesyłek)
-		'sender_name' => array('SENDER_NAME', 'input'),
-		'sender_company' => array('SENDER_COMPANY', 'input'),
-		'sender_email' => array('SENDER_EMAIL', 'input'),
-		'sender_phone' => array('SENDER_PHONE', 'input'),
-		'sender_street' => array('SENDER_STREET', 'input'),
-		'sender_building' => array('SENDER_BUILDING', 'input'),
-		'sender_city' => array('SENDER_CITY', 'input'),
-		'sender_postcode' => array('SENDER_POSTCODE', 'input'),
+		'sender_name' => array('SENDER_NAME', 'input', ''),
+		'sender_company' => array('SENDER_COMPANY', 'input', ''),
+		'sender_email' => array('SENDER_EMAIL', 'input', ''),
+		'sender_phone' => array('SENDER_PHONE', 'input', ''),
+		'sender_street' => array('SENDER_STREET', 'input', ''),
+		'sender_building' => array('SENDER_BUILDING', 'input', ''),
+		'sender_city' => array('SENDER_CITY', 'input', ''),
+		'sender_postcode' => array('SENDER_POSTCODE', 'input', ''),
 		// Domyślny rozmiar paczki
 		'default_parcel_size' => array('DEFAULT_PARCEL_SIZE', 'list', array(
 			'small' => 'Mała (A)',
@@ -55,10 +52,10 @@ class plgHikashopshippingInpost_hika extends hikashopShippingPlugin {
 			'osm' => 'OpenStreetMap',
 			'google' => 'Google Maps'
 		)),
-		'google_api_key' => array('GOOGLE_API_KEY', 'input'),
-		'default_lat' => array('DEFAULT_LAT', 'input'),
-		'default_lng' => array('DEFAULT_LNG', 'input'),
-		'default_zoom' => array('DEFAULT_ZOOM', 'input'),
+		'google_api_key' => array('GOOGLE_API_KEY', 'input', ''),
+		'default_lat' => array('DEFAULT_LAT', 'input', '52.2297'),
+		'default_lng' => array('DEFAULT_LNG', 'input', '21.0122'),
+		'default_zoom' => array('DEFAULT_ZOOM', 'input', ''),
 		'show_parcel_lockers' => array('SHOW_PARCEL_LOCKERS', 'boolean', '1'),
 		'show_pops' => array('SHOW_POPS', 'boolean', '0'),
 		'debug' => array('INPOST_DEBUG', 'boolean', '0')
@@ -81,20 +78,29 @@ class plgHikashopshippingInpost_hika extends hikashopShippingPlugin {
 	/**
 	 * Wyświetla informację o paczkomacie po liście produktów w zamówieniu
 	 * Event z Display API HikaShop
+	 * $type może być: 'order_back_show', 'order_back_invoice', 'email_notification_html'
 	 */
-	public function onAfterOrderProductsListingDisplay(&$order, $mail) {
-		// Tylko w panelu admina
-		$app = JFactory::getApplication();
-		if(!$app->isClient('administrator')) {
-			return;
-		}
+	public function onAfterOrderProductsListingDisplay(&$order, $type) {
+		// Sprawdź czy to kontekst emaila
+		$isEmail = (strpos($type, 'email') !== false);
 		
-		// Obsługa akcji AJAX (tworzenie przesyłki, pobieranie etykiety)
-		$this->handleAdminAjaxActions($order);
+		// Sprawdź czy to admin
+		$app = JFactory::getApplication();
+		$isAdmin = $app->isClient('administrator') && !$isEmail;
+		
+		// Obsługa akcji AJAX w adminie (tworzenie przesyłki, pobieranie etykiety) - PRZED wyświetlaniem
+		if($isAdmin) {
+			$this->handleAdminAjaxActions($order);
+		}
 		
 		// Sprawdź czy zamówienie ma metodę InPost
 		if(empty($order->order_shipping_method) || $order->order_shipping_method !== $this->name) {
 			return;
+		}
+		
+		// Upewnij się że kolumna shipment_id istnieje (tylko nie w emailu)
+		if($isAdmin) {
+			$this->ensureShipmentIdFieldExists();
 		}
 		
 		// Pobierz paczkomat z bazy (bo może nie być w obiekcie $order)
@@ -134,32 +140,74 @@ class plgHikashopshippingInpost_hika extends hikashopShippingPlugin {
 		echo '<div id="inpost_locker_info" style="background:#fff3cd; border:2px solid #ffc107; padding:15px; margin:15px 0; border-radius:8px; font-size:14px;">';
 		echo '<strong style="color:#856404; font-size:16px;">📦 ' . htmlspecialchars($label) . ':</strong><br>';
 		echo '<span style="color:#333; font-size:15px; font-weight:bold;">' . htmlspecialchars($locker) . '</span>';
+		echo '</div>';
 		
-		// Pobierz tylko nazwę paczkomatu (pierwszy element przed " - ")
+		// Sekcja ShipX API - TYLKO DLA ADMINA i NIE dla emaili
+		if(!$isAdmin) {
+			return; // Email/klient widzi tylko paczkomat, nie widzi sekcji ShipX
+		}
+		
+		// Pobierz tylko kod paczkomatu (pierwszy element przed " - ")
+		// Kod paczkomatu to ciąg znaków alfanumerycznych, np. KRA012, WAW123
 		$lockerName = $locker;
 		if(strpos($locker, ' - ') !== false) {
 			$lockerName = trim(explode(' - ', $locker)[0]);
 		}
+		// Dodatkowo wyczyść z niepotrzebnych znaków - zostaw tylko litery i cyfry
+		$lockerCode = preg_replace('/[^A-Z0-9]/i', '', $lockerName);
 		
-		// Sekcja ShipX API
-		echo '<div style="margin-top:15px; padding-top:15px; border-top:1px solid #ffc107;">';
-		echo '<strong style="color:#856404;">🚚 InPost ShipX:</strong><br>';
+		// Sekcja ShipX API (tylko admin)
+		echo '<div id="inpost_shipx_admin" style="background:#e3f2fd; border:2px solid #2196f3; padding:15px; margin:15px 0; border-radius:8px; font-size:14px;">';
+		echo '<strong style="color:#1565c0;">🚚 InPost ShipX (Admin):</strong> <small>(kod: ' . htmlspecialchars($lockerCode) . ')</small><br>';
 		
 		if(!empty($shipmentId)) {
-			// Przesyłka już utworzona
-			echo '<span style="color:#28a745; font-weight:bold;">✅ ' . JText::_('PLG_HIKASHOPSHIPPING_INPOST_HIKA_SHIPMENT_CREATED') . ': ' . htmlspecialchars($shipmentId) . '</span><br>';
-			echo '<a href="' . JUri::current() . '&inpost_action=get_label&order_id=' . (int)$order->order_id . '" class="btn btn-small btn-success" style="margin-top:10px; background:#28a745; color:#fff; padding:8px 15px; border-radius:4px; text-decoration:none;">';
-			echo '📄 ' . JText::_('PLG_HIKASHOPSHIPPING_INPOST_HIKA_DOWNLOAD_LABEL');
-			echo '</a>';
+			// Przesyłka już utworzona - sprawdź jej status
+			$shippingParams = $this->getShippingParamsForOrder($order);
+			$shipmentInfo = $this->callShipXApi('GET', '/v1/shipments/' . $shipmentId, null, $shippingParams);
+			$shipmentStatus = $shipmentInfo->status ?? 'unknown';
+			$isConfirmed = ($shipmentStatus === 'confirmed');
+			
+			echo '<span style="color:#28a745; font-weight:bold;">✅ ' . JText::_('PLG_HIKASHOPSHIPPING_INPOST_HIKA_SHIPMENT_CREATED') . ': ' . htmlspecialchars($shipmentId) . '</span>';
+			echo ' <span style="color:#666;">(status: ' . htmlspecialchars($shipmentStatus) . ')</span><br>';
+			
+			if($isConfirmed) {
+				// Przesyłka opłacona - pokaż przycisk pobierania etykiety
+				echo '<form method="post" style="display:inline-block; margin-top:10px;">';
+				echo '<input type="hidden" name="inpost_action" value="get_label" />';
+				echo '<input type="hidden" name="order_id" value="' . (int)$order->order_id . '" />';
+				echo JHtml::_('form.token');
+				echo '<button type="submit" class="btn btn-small btn-success" style="background:#28a745; color:#fff; padding:8px 15px; border-radius:4px; border:none; cursor:pointer;">';
+				echo '📄 ' . JText::_('PLG_HIKASHOPSHIPPING_INPOST_HIKA_DOWNLOAD_LABEL');
+				echo '</button>';
+				echo '</form>';
+			} else {
+				// Przesyłka nieopłacona - pokaż przycisk opłacenia
+				echo '<form method="post" style="display:inline-block; margin-top:10px; margin-right:10px;">';
+				echo '<input type="hidden" name="inpost_action" value="buy_shipment" />';
+				echo '<input type="hidden" name="order_id" value="' . (int)$order->order_id . '" />';
+				echo JHtml::_('form.token');
+				echo '<button type="submit" class="btn btn-small btn-warning" style="background:#ffc107; color:#333; padding:8px 15px; border-radius:4px; border:none; cursor:pointer;">';
+				echo '💳 Opłać przesyłkę';
+				echo '</button>';
+				echo '</form>';
+				echo '<small style="color:#856404; display:block; margin-top:5px;">Przesyłka utworzona, ale nieopłacona. Etykieta dostępna po opłaceniu.</small>';
+			}
 		} else {
 			// Sprawdź czy skonfigurowano API
 			$hasApiConfig = !empty($shippingParams->shipx_token) && !empty($shippingParams->shipx_organization_id);
+			$isSandbox = ($shippingParams->api_mode ?? 'production') === 'sandbox';
 			
 			if($hasApiConfig) {
-				echo '<form method="post" style="display:inline;">';
+				echo '<form method="post" style="display:inline-block;">';
 				echo '<input type="hidden" name="inpost_action" value="create_shipment" />';
 				echo '<input type="hidden" name="order_id" value="' . (int)$order->order_id . '" />';
-				echo '<input type="hidden" name="locker_name" value="' . htmlspecialchars($lockerName) . '" />';
+				if($isSandbox) {
+					// W trybie sandbox pozwól wpisać kod ręcznie (testowe paczkomaty)
+					echo '<input type="text" name="locker_name" value="' . htmlspecialchars($lockerCode) . '" style="width:100px; padding:5px; margin-right:5px;" placeholder="Kod paczkomatu" />';
+					echo '<small style="color:#666; display:block; margin-bottom:5px;">Sandbox: użyj np. BBI02A, AND01A</small>';
+				} else {
+					echo '<input type="hidden" name="locker_name" value="' . htmlspecialchars($lockerCode) . '" />';
+				}
 				echo JHtml::_('form.token');
 				echo '<button type="submit" class="btn btn-small btn-primary" style="background:#007bff; color:#fff; padding:8px 15px; border-radius:4px; border:none; cursor:pointer;">';
 				echo '📦 ' . JText::_('PLG_HIKASHOPSHIPPING_INPOST_HIKA_CREATE_SHIPMENT');
@@ -188,7 +236,7 @@ class plgHikashopshippingInpost_hika extends hikashopShippingPlugin {
 		}
 		
 		// Weryfikuj token dla POST
-		if($action === 'create_shipment') {
+		if(in_array($action, ['create_shipment', 'get_label'])) {
 			JSession::checkToken() or die('Invalid Token');
 		}
 		
@@ -203,7 +251,43 @@ class plgHikashopshippingInpost_hika extends hikashopShippingPlugin {
 			case 'get_label':
 				$this->handleGetLabel($order, $shippingParams);
 				break;
+				
+			case 'buy_shipment':
+				$this->handleBuyShipment($order, $shippingParams);
+				break;
 		}
+	}
+	
+	/**
+	 * Opłaca istniejącą przesyłkę
+	 */
+	protected function handleBuyShipment($order, $shippingParams) {
+		$app = JFactory::getApplication();
+		$db = JFactory::getDbo();
+		
+		$query = $db->getQuery(true)
+			->select($db->quoteName('inpost_shipment_id'))
+			->from($db->quoteName('#__hikashop_order'))
+			->where($db->quoteName('order_id') . ' = ' . (int)$order->order_id);
+		$db->setQuery($query);
+		$shipmentId = $db->loadResult();
+		
+		if(empty($shipmentId)) {
+			$app->enqueueMessage('Brak ID przesyłki do opłacenia', 'error');
+			return;
+		}
+		
+		$buyResult = $this->buyShipmentOffer($shipmentId, $shippingParams);
+		
+		if($buyResult && isset($buyResult->status) && $buyResult->status === 'confirmed') {
+			$app->enqueueMessage('Przesyłka InPost opłacona! ID: ' . $shipmentId, 'success');
+		} else {
+			$app->enqueueMessage('Nie udało się opłacić przesyłki. Sprawdź w Managerze Paczek.', 'error');
+		}
+		
+		// Przekieruj z powrotem na stronę zamówienia
+		$redirectUrl = 'index.php?option=com_hikashop&ctrl=order&task=edit&cid=' . (int)$order->order_id;
+		$app->redirect(JRoute::_($redirectUrl, false));
 	}
 	
 	/**
@@ -286,11 +370,28 @@ class plgHikashopshippingInpost_hika extends hikashopShippingPlugin {
 			
 			$this->debug('Shipment created successfully', ['shipment_id' => $result->id], $shippingParams);
 			
-			// Teraz kup ofertę (zakup etykiety)
-			$this->buyShipmentOffer($result->id, $shippingParams);
+			// Sprawdź czy zamówienie jest potwierdzone/opłacone - tylko wtedy opłacaj przesyłkę
+			// Typowe statusy HikaShop: created, pending, confirmed, shipped, cancelled, refunded
+			$confirmedStatuses = array('confirmed', 'shipped'); // Statusy przy których opłacamy przesyłkę
+			$orderStatus = $order->order_status ?? '';
 			
-			$app->enqueueMessage('Przesyłka InPost utworzona pomyślnie! ID: ' . $result->id, 'success');
-			$app->redirect(JUri::current());
+			if(in_array($orderStatus, $confirmedStatuses)) {
+				// Zamówienie potwierdzone - opłać przesyłkę
+				$buyResult = $this->buyShipmentOffer($result->id, $shippingParams);
+				
+				if($buyResult && isset($buyResult->status) && $buyResult->status === 'confirmed') {
+					$app->enqueueMessage('Przesyłka InPost utworzona i opłacona! ID: ' . $result->id, 'success');
+				} else {
+					$app->enqueueMessage('Przesyłka InPost utworzona! ID: ' . $result->id . ' (wymaga opłacenia w Managerze Paczek)', 'warning');
+				}
+			} else {
+				// Zamówienie nieopłacone - tylko utwórz przesyłkę, nie opłacaj
+				$app->enqueueMessage('Przesyłka InPost utworzona (nieopłacona)! ID: ' . $result->id . '. Opłać gdy zamówienie zostanie potwierdzone.', 'warning');
+			}
+			
+			// Przekieruj z powrotem na stronę zamówienia
+			$redirectUrl = 'index.php?option=com_hikashop&ctrl=order&task=edit&cid=' . (int)$order->order_id;
+			$app->redirect(JRoute::_($redirectUrl, false));
 		} else {
 			$errorMsg = isset($result->error) ? $result->error : 'Nieznany błąd';
 			$errorDesc = isset($result->description) ? $result->description : '';
@@ -302,42 +403,96 @@ class plgHikashopshippingInpost_hika extends hikashopShippingPlugin {
 				'details' => $errorDetails
 			], $shippingParams);
 			
-			$app->enqueueMessage('Błąd tworzenia przesyłki: ' . $errorMsg . ' - ' . $errorDesc . ' ' . $errorDetails, 'error');
+			// Przetłumacz typowe błędy na bardziej zrozumiałe komunikaty
+			$userMessage = $this->translateShipXError($errorMsg, $errorDesc, $errorDetails);
+			$app->enqueueMessage($userMessage, 'error');
 		}
 	}
 	
 	/**
-	 * Kupuje ofertę przesyłki (aktywuje etykietę)
+	 * Tłumaczy błędy ShipX API na zrozumiałe komunikaty
+	 */
+	protected function translateShipXError($error, $description, $details) {
+		// Sprawdź typowe błędy
+		if(strpos($details, 'target_point') !== false && strpos($details, 'does_not_exist') !== false) {
+			return 'Błąd: Podany kod paczkomatu nie istnieje. Sprawdź czy wpisałeś poprawny kod (np. KRA010, WAW01M). W trybie sandbox używaj kodów testowych (np. BBI02A, AND01A).';
+		}
+		
+		if(strpos($details, 'phone') !== false && strpos($details, 'invalid') !== false) {
+			return 'Błąd: Nieprawidłowy numer telefonu odbiorcy lub nadawcy. Numer musi mieć 9 cyfr.';
+		}
+		
+		if(strpos($details, 'email') !== false && strpos($details, 'invalid') !== false) {
+			return 'Błąd: Nieprawidłowy adres email odbiorcy lub nadawcy.';
+		}
+		
+		if(strpos($details, 'post_code') !== false) {
+			return 'Błąd: Nieprawidłowy kod pocztowy. Użyj formatu XX-XXX (np. 00-001).';
+		}
+		
+		if($error === 'validation_failed') {
+			return 'Błąd walidacji danych: ' . $details;
+		}
+		
+		if($error === 'forbidden') {
+			return 'Błąd autoryzacji: Sprawdź token API i Organization ID w konfiguracji pluginu.';
+		}
+		
+		if($error === 'unauthorized') {
+			return 'Błąd autoryzacji: Token API jest nieprawidłowy lub wygasł.';
+		}
+		
+		// Domyślny komunikat
+		return 'Błąd tworzenia przesyłki: ' . $error . ($description ? ' - ' . $description : '') . ($details ? ' ' . $details : '');
+	}
+	
+	/**
+	 * Kupuje/potwierdza przesyłkę (aktywuje etykietę)
+	 * Trzeba pobrać offer_id z przesyłki i przekazać go do /buy
 	 */
 	protected function buyShipmentOffer($shipmentId, $shippingParams) {
-		// Najpierw pobierz dostępne oferty
-		$result = $this->callShipXApi(
+		// Najpierw pobierz dane przesyłki (zawiera offers)
+		$shipment = $this->callShipXApi(
 			'GET',
-			'/v1/shipments/' . $shipmentId . '/offers',
+			'/v1/shipments/' . $shipmentId,
 			null,
 			$shippingParams
 		);
 		
-		$this->debug('Got offers for shipment', $result, $shippingParams);
+		$this->debug('Get shipment for buy', $shipment, $shippingParams);
 		
-		// Kup pierwszą dostępną ofertę
-		if($result && !empty($result->items)) {
-			foreach($result->items as $offer) {
-				if($offer->status === 'available') {
-					$buyResult = $this->callShipXApi(
-						'POST',
-						'/v1/shipments/' . $shipmentId . '/buy',
-						array('offer_id' => $offer->id),
-						$shippingParams
-					);
-					
-					$this->debug('Buy offer result', $buyResult, $shippingParams);
-					return $buyResult;
+		// Sprawdź czy przesyłka jest już opłacona (sandbox automatycznie opłaca)
+		if($shipment && $shipment->status === 'confirmed') {
+			$this->debug('Shipment already confirmed (paid)', null, $shippingParams);
+			return $shipment; // Zwróć przesyłkę - jest już opłacona
+		}
+		
+		// Znajdź offer_id do kupienia
+		$offerId = null;
+		if($shipment && !empty($shipment->offers)) {
+			foreach($shipment->offers as $offer) {
+				if($offer->status === 'available' || $offer->status === 'offer_selected') {
+					$offerId = $offer->id;
+					break;
 				}
 			}
 		}
 		
-		return null;
+		if(!$offerId) {
+			$this->debug('No available offer_id found', null, $shippingParams);
+			return $shipment; // Zwróć aktualny stan przesyłki
+		}
+		
+		// Kup z offer_id
+		$buyResult = $this->callShipXApi(
+			'POST',
+			'/v1/shipments/' . $shipmentId . '/buy',
+			array('offer_id' => $offerId),
+			$shippingParams
+		);
+		
+		$this->debug('Buy shipment result', $buyResult, $shippingParams);
+		return $buyResult;
 	}
 	
 	/**
@@ -368,15 +523,30 @@ class plgHikashopshippingInpost_hika extends hikashopShippingPlugin {
 			true // raw response (PDF)
 		);
 		
-		if($labelData) {
+		if($labelData && substr($labelData, 0, 4) === '%PDF') {
+			// Wyczyść wszystkie bufory wyjściowe
+			while (ob_get_level()) {
+				ob_end_clean();
+			}
 			// Zwróć PDF do przeglądarki
 			header('Content-Type: application/pdf');
 			header('Content-Disposition: attachment; filename="inpost_label_' . $shipmentId . '.pdf"');
 			header('Content-Length: ' . strlen($labelData));
+			header('Cache-Control: private, max-age=0, must-revalidate');
+			header('Pragma: public');
 			echo $labelData;
 			exit;
 		} else {
-			JFactory::getApplication()->enqueueMessage('Błąd pobierania etykiety. Przesyłka może nie być jeszcze opłacona.', 'error');
+			// Spróbuj zdekodować jako JSON żeby zobaczyć błąd
+			$errorData = @json_decode($labelData);
+			$errorMsg = 'Błąd pobierania etykiety.';
+			if($errorData && isset($errorData->message)) {
+				$errorMsg .= ' ' . $errorData->message;
+			} elseif($errorData && isset($errorData->error)) {
+				$errorMsg .= ' ' . $errorData->error;
+			}
+			$this->debug('Label download failed', ['response' => substr($labelData, 0, 500)], $shippingParams);
+			JFactory::getApplication()->enqueueMessage($errorMsg . ' Przesyłka może nie być jeszcze opłacona.', 'error');
 		}
 	}
 	
@@ -398,10 +568,13 @@ class plgHikashopshippingInpost_hika extends hikashopShippingPlugin {
 		
 		$ch = curl_init();
 		
+		// Dla rawResponse (PDF) użyj Accept: application/pdf
+		$acceptHeader = $rawResponse ? 'Accept: application/pdf' : 'Accept: application/json';
+		
 		$headers = array(
 			'Authorization: Bearer ' . $token,
 			'Content-Type: application/json',
-			'Accept: application/json'
+			$acceptHeader
 		);
 		
 		curl_setopt($ch, CURLOPT_URL, $url);
@@ -426,7 +599,8 @@ class plgHikashopshippingInpost_hika extends hikashopShippingPlugin {
 		$this->debug('ShipX API Response', [
 			'http_code' => $httpCode,
 			'error' => $error,
-			'response_length' => strlen($response)
+			'response_length' => strlen($response),
+			'response_body' => substr($response, 0, 2000) // Loguj pierwsze 2000 znaków odpowiedzi
 		], $shippingParams);
 		
 		if($error) {
@@ -710,9 +884,9 @@ class plgHikashopshippingInpost_hika extends hikashopShippingPlugin {
 		$searchType = $mapType; // searchType musi być zgodny z mapType
 		$googleApiKeyJs = addslashes($googleApiKey);
 		
-		// Wybierz URL SDK w zależności od trybu API
-		$sdkJs = ($apiMode === 'sandbox') ? self::GEO_WIDGET_JS_SANDBOX : self::GEO_WIDGET_JS;
-		$sdkCss = ($apiMode === 'sandbox') ? self::GEO_WIDGET_CSS_SANDBOX : self::GEO_WIDGET_CSS;
+		// GeoWidget SDK - zawsze produkcja (mapa nie wymaga autoryzacji, pokazuje prawdziwe paczkomaty)
+		$sdkJs = self::GEO_WIDGET_JS;
+		$sdkCss = self::GEO_WIDGET_CSS;
 		
 		// Domyślny zoom zależny od typu mapy jeśli nie ustawiony
 		if(empty($defaultZoom) || $defaultZoom == 0) {
@@ -734,7 +908,7 @@ class plgHikashopshippingInpost_hika extends hikashopShippingPlugin {
 	var pendingOpen = false;
 	
 	// Dodaj CSS od razu
-	if(!document.querySelector('link[href*=\"geowidget\"]') && !document.querySelector('link[href*=\"sandbox-easy-geowidget\"]')){
+	if(!document.querySelector('link[href*=\"geowidget\"]')){
 		var link = document.createElement('link');
 		link.rel = 'stylesheet';
 		link.href = SDK_CSS;
