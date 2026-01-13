@@ -30,9 +30,12 @@ return new class implements ServiceProviderInterface
         $container->set(
             PluginInterface::class,
             function (Container $container) {
+                $dispatcher = $container->get(DispatcherInterface::class);
+                $config = (array) PluginHelper::getPlugin('hikashopshipping', 'inpost_hika');
+                
                 $plugin = new InpostHika(
-                    $container->get(DispatcherInterface::class),
-                    (array) PluginHelper::getPlugin('hikashopshipping', 'inpost_hika')
+                    $dispatcher,
+                    $config
                 );
                 $plugin->setApplication(Factory::getApplication());
 
