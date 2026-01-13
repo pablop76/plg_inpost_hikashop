@@ -1,13 +1,13 @@
 # InPost Paczkomaty - HikaShop Shipping Plugin
 
-Plugin wysłykowy dla HikaShop (Joomla) integrujący InPost Paczkomaty z mapą GeoWidget i **pełną integracją ShipX API** (tworzenie przesyłek i etykiet).
+Plugin wysyłkowy dla HikaShop (Joomla 4/5/6) integrujący InPost Paczkomaty z mapą GeoWidget i **pełną integracją ShipX API** (tworzenie przesyłek i etykiet).
 
 ## Funkcje
 
 ### Wybór paczkomatu (Frontend)
 
 - ✅ Wybór paczkomatu na mapie (GeoWidget SDK)
-- ✅ Obsługa paczkomatow i punktów POP
+- ✅ Obsługa paczkomatów i punktów POP
 - ✅ Zapis wybranego paczkomatu w zamówieniu
 - ✅ Walidacja - blokada zamówienia bez wybranego punktu
 - ✅ Konfiguracja typu mapy: OpenStreetMap lub Google Maps
@@ -29,9 +29,9 @@ Plugin wysłykowy dla HikaShop (Joomla) integrujący InPost Paczkomaty z mapą G
 
 ## Wymagania
 
-- Joomla 4.x / 5.x
-- HikaShop 4.x / 5.x
-- PHP 7.4+
+- **Joomla 4.x / 5.x / 6.x**
+- **HikaShop 4.x / 5.x**
+- **PHP 8.1+**
 
 ## Instalacja
 
@@ -158,13 +158,18 @@ Plugin automatycznie tworzy kolumny w tabeli `#__hikashop_order`:
 - `inpost_locker` - nazwa wybranego paczkomatu
 - `inpost_shipment_id` - ID przesyłki w ShipX (po utworzeniu)
 
-## Struktura plików
+## Struktura plików (Joomla 5/6)
 
 ```
 plg_inpost_hika/
-├── inpost_hika.php          # Główny plik pluginu
+├── inpost_hika.php          # Legacy entry point
 ├── inpost_hika.xml          # Manifest instalacyjny
 ├── index.html               # Plik bezpieczeństwa
+├── services/
+│   └── provider.php         # Service Provider (Joomla 5/6)
+├── src/
+│   └── Extension/
+│       └── InpostHika.php   # Główna klasa pluginu
 ├── language/
 │   ├── en-GB/
 │   │   ├── en-GB.plg_hikashopshipping_inpost_hika.ini
@@ -172,10 +177,27 @@ plg_inpost_hika/
 │   └── pl-PL/
 │       ├── pl-PL.plg_hikashopshipping_inpost_hika.ini
 │       └── pl-PL.plg_hikashopshipping_inpost_hika.sys.ini
+├── plg_hikashop_inpost_display/  # Dodatkowy plugin (opcjonalny)
+│   ├── inpost_display.php
+│   ├── inpost_display.xml
+│   ├── services/
+│   │   └── provider.php
+│   └── src/
+│       └── Extension/
+│           └── InpostDisplay.php
 └── README.md
 ```
 
 ## Changelog
+
+### v4.0.0 (2026-01-13)
+
+- **BREAKING**: Pełna kompatybilność z Joomla 5/6
+- Migracja do namespace `Pablop76\Plugin\HikashopShipping\InpostHika`
+- Dodano `services/provider.php` (Service Provider)
+- Zamieniono przestarzałe klasy JFactory, JText na nowe API Joomla
+- Struktura katalogów zgodna z Joomla 5/6 (`src/Extension/`)
+- Wymagane PHP 8.1+
 
 ### v3.0.0 (2026-01-13)
 
