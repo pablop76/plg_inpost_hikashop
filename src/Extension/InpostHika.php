@@ -36,6 +36,8 @@ class InpostHika extends \hikashopShippingPlugin
 
 	// Definicja pól konfiguracyjnych dla HikaShop
 	public $pluginConfig = array(
+		// ShipX - włącznik i tryb API
+		'enable_shipx' => array('ENABLE_SHIPX', 'boolean', '0'),
 		'api_mode' => array('API_MODE', 'list', array(
 			'production' => 'Produkcja',
 			'sandbox' => 'Sandbox (testowe)'
@@ -158,6 +160,12 @@ class InpostHika extends \hikashopShippingPlugin
 		// Sekcja ShipX API - TYLKO DLA ADMINA i NIE dla emaili
 		if (!$isAdmin) {
 			return; // Email/klient widzi tylko paczkomat, nie widzi sekcji ShipX
+		}
+		
+		// Sprawdź czy ShipX jest włączony
+		$enableShipx = !empty($shippingParams->enable_shipx);
+		if (!$enableShipx) {
+			return; // ShipX wyłączony - nie pokazuj sekcji admin
 		}
 		
 		// Pobierz tylko kod paczkomatu (pierwszy element przed " - ")
@@ -699,6 +707,7 @@ class InpostHika extends \hikashopShippingPlugin
 		$element->shipping_description = '';
 		$element->shipping_type = $this->name;
 		$element->shipping_params = new \stdClass();
+		$element->shipping_params->enable_shipx = 0;
 		$element->shipping_params->api_mode = 'production';
 		// ShipX API
 		$element->shipping_params->shipx_token = '';
@@ -757,6 +766,50 @@ class InpostHika extends \hikashopShippingPlugin
 	{
 		$this->ensureOrderFieldExists();
 		parent::onShippingConfigurationSave($element);
+	}
+
+	/**
+	 * Dodaje JavaScript do ukrywania pól ShipX gdy wyłączone
+	 */
+	public function onShippingConfiguration(&$element)
+	{
+		parent::onShippingConfiguration($element);
+		
+		// JavaScript do ukrywania/pokazywania pól ShipX
+		$js = "
+		<script>
+		document.addEventListener('DOMContentLoaded', function() {
+			var enableShipx = document.querySelector('[name*=\"enable_shipx\"]');
+			if (!enableShipx) return;
+			
+			// Lista pól do ukrycia gdy ShipX wyłączony
+			var shipxFields = ['api_mode', 'shipx_token', 'shipx_organization_id', 
+				'sender_name', 'sender_company', 'sender_email', 'sender_phone',
+				'sender_street', 'sender_building', 'sender_city', 'sender_postcode',
+				'default_parcel_size'];
+			
+			function toggleShipxFields() {
+				var enabled = enableShipx.checked || enableShipx.value == '1';
+				shipxFields.forEach(function(fieldName) {
+					var field = document.querySelector('[name*=\"' + fieldName + '\"]');
+					if (field) {
+						var row = field.closest('tr') || field.closest('.control-group');
+						if (row) {
+							row.style.display = enabled ? '' : 'none';
+						}
+					}
+				});
+			}
+			
+			// Toggle na start i przy zmianie
+			toggleShipxFields();
+			enableShipx.addEventListener('change', toggleShipxFields);
+			enableShipx.addEventListener('click', toggleShipxFields);
+		});
+		</script>
+		";
+		
+		echo $js;
 	}
 
 	public function onAfterOrderConfirm(&$order, &$methods, $method_id)
