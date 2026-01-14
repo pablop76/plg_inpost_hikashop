@@ -776,11 +776,16 @@ class InpostHika extends \hikashopShippingPlugin
 		parent::onShippingConfiguration($element);
 		
 		// JavaScript do ukrywania/pokazywania pól ShipX
+		// HikaShop booleanlist używa radiobuttons z wartościami "1" i "0"
 		$js = "
 		<script>
 		document.addEventListener('DOMContentLoaded', function() {
-			var enableShipx = document.querySelector('[name*=\"enable_shipx\"]');
-			if (!enableShipx) return;
+			// Szukaj wszystkich radio buttonów dla enable_shipx
+			var radios = document.querySelectorAll('input[type=\"radio\"][name*=\"enable_shipx\"]');
+			if (!radios.length) {
+				console.log('InPost: enable_shipx radios not found');
+				return;
+			}
 			
 			// Lista pól do ukrycia gdy ShipX wyłączony
 			var shipxFields = ['api_mode', 'shipx_token', 'shipx_organization_id', 
@@ -789,11 +794,21 @@ class InpostHika extends \hikashopShippingPlugin
 				'default_parcel_size'];
 			
 			function toggleShipxFields() {
-				var enabled = enableShipx.checked || enableShipx.value == '1';
+				// Znajdź zaznaczony radio
+				var enabled = false;
+				radios.forEach(function(radio) {
+					if (radio.checked && radio.value == '1') {
+						enabled = true;
+					}
+				});
+				
+				console.log('InPost: ShipX enabled = ' + enabled);
+				
 				shipxFields.forEach(function(fieldName) {
+					// Szukaj pola po nazwie (może być input, select, textarea)
 					var field = document.querySelector('[name*=\"' + fieldName + '\"]');
 					if (field) {
-						var row = field.closest('tr') || field.closest('.control-group');
+						var row = field.closest('tr');
 						if (row) {
 							row.style.display = enabled ? '' : 'none';
 						}
@@ -801,10 +816,11 @@ class InpostHika extends \hikashopShippingPlugin
 				});
 			}
 			
-			// Toggle na start i przy zmianie
+			// Toggle na start i przy zmianie każdego radio
 			toggleShipxFields();
-			enableShipx.addEventListener('change', toggleShipxFields);
-			enableShipx.addEventListener('click', toggleShipxFields);
+			radios.forEach(function(radio) {
+				radio.addEventListener('change', toggleShipxFields);
+			});
 		});
 		</script>
 		";
