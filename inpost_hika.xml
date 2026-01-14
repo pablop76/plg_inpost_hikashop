@@ -20,11 +20,11 @@
 		<folder>src</folder>
 	</files>
 
-	<languages>
-		<language tag="en-GB">language/en-GB/en-GB.plg_hikashopshipping_inpost_hika.ini</language>
-		<language tag="en-GB">language/en-GB/en-GB.plg_hikashopshipping_inpost_hika.sys.ini</language>
-		<language tag="pl-PL">language/pl-PL/pl-PL.plg_hikashopshipping_inpost_hika.ini</language>
-		<language tag="pl-PL">language/pl-PL/pl-PL.plg_hikashopshipping_inpost_hika.sys.ini</language>
+	<languages folder="administrator">
+		<language tag="en-GB">language/en-GB/plg_hikashopshipping_inpost_hika.ini</language>
+		<language tag="en-GB">language/en-GB/plg_hikashopshipping_inpost_hika.sys.ini</language>
+		<language tag="pl-PL">language/pl-PL/plg_hikashopshipping_inpost_hika.ini</language>
+		<language tag="pl-PL">language/pl-PL/plg_hikashopshipping_inpost_hika.sys.ini</language>
 	</languages>
 
 	<config>
