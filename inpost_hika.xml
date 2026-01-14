@@ -20,12 +20,22 @@
 		<folder>src</folder>
 	</files>
 
-	<languages folder="administrator">
-		<language tag="en-GB">language/en-GB/plg_hikashopshipping_inpost_hika.ini</language>
-		<language tag="en-GB">language/en-GB/plg_hikashopshipping_inpost_hika.sys.ini</language>
-		<language tag="pl-PL">language/pl-PL/plg_hikashopshipping_inpost_hika.ini</language>
-		<language tag="pl-PL">language/pl-PL/plg_hikashopshipping_inpost_hika.sys.ini</language>
+	<languages folder="language">
+		<language tag="en-GB">en-GB/en-GB.plg_hikashopshipping_inpost_hika.ini</language>
+		<language tag="en-GB">en-GB/en-GB.plg_hikashopshipping_inpost_hika.sys.ini</language>
+		<language tag="pl-PL">pl-PL/pl-PL.plg_hikashopshipping_inpost_hika.ini</language>
+		<language tag="pl-PL">pl-PL/pl-PL.plg_hikashopshipping_inpost_hika.sys.ini</language>
 	</languages>
+	
+	<!-- Pliki językowe dla panelu admina (HikaShop) -->
+	<administration>
+		<languages folder="language">
+			<language tag="en-GB">en-GB/en-GB.plg_hikashopshipping_inpost_hika.ini</language>
+			<language tag="en-GB">en-GB/en-GB.plg_hikashopshipping_inpost_hika.sys.ini</language>
+			<language tag="pl-PL">pl-PL/pl-PL.plg_hikashopshipping_inpost_hika.ini</language>
+			<language tag="pl-PL">pl-PL/pl-PL.plg_hikashopshipping_inpost_hika.sys.ini</language>
+		</languages>
+	</administration>
 
 	<config>
 		<fields name="params">

@@ -37,41 +37,41 @@ class InpostHika extends \hikashopShippingPlugin
 	// Definicja pól konfiguracyjnych dla HikaShop
 	public $pluginConfig = array(
 		// ShipX - włącznik i tryb API
-		'enable_shipx' => array('ENABLE_SHIPX', 'boolean', '0'),
-		'api_mode' => array('API_MODE', 'list', array(
-			'production' => 'Produkcja',
-			'sandbox' => 'Sandbox (testowe)'
+		'enable_shipx' => array('PLG_HIKASHOPSHIPPING_INPOST_HIKA_ENABLE_SHIPX', 'boolean', '0'),
+		'api_mode' => array('PLG_HIKASHOPSHIPPING_INPOST_HIKA_API_MODE', 'list', array(
+			'production' => 'PLG_HIKASHOPSHIPPING_INPOST_HIKA_API_PRODUCTION',
+			'sandbox' => 'PLG_HIKASHOPSHIPPING_INPOST_HIKA_API_SANDBOX'
 		)),
 		// ShipX API
-		'shipx_token' => array('SHIPX_TOKEN', 'textarea'),
-		'shipx_organization_id' => array('SHIPX_ORGANIZATION_ID', 'input', ''),
+		'shipx_token' => array('PLG_HIKASHOPSHIPPING_INPOST_HIKA_SHIPX_TOKEN', 'textarea'),
+		'shipx_organization_id' => array('PLG_HIKASHOPSHIPPING_INPOST_HIKA_SHIPX_ORGANIZATION_ID', 'input', ''),
 		// Dane nadawcy (wymagane do tworzenia przesyłek)
-		'sender_name' => array('SENDER_NAME', 'input', ''),
-		'sender_company' => array('SENDER_COMPANY', 'input', ''),
-		'sender_email' => array('SENDER_EMAIL', 'input', ''),
-		'sender_phone' => array('SENDER_PHONE', 'input', ''),
-		'sender_street' => array('SENDER_STREET', 'input', ''),
-		'sender_building' => array('SENDER_BUILDING', 'input', ''),
-		'sender_city' => array('SENDER_CITY', 'input', ''),
-		'sender_postcode' => array('SENDER_POSTCODE', 'input', ''),
+		'sender_name' => array('PLG_HIKASHOPSHIPPING_INPOST_HIKA_SENDER_NAME', 'input', ''),
+		'sender_company' => array('PLG_HIKASHOPSHIPPING_INPOST_HIKA_SENDER_COMPANY', 'input', ''),
+		'sender_email' => array('PLG_HIKASHOPSHIPPING_INPOST_HIKA_SENDER_EMAIL', 'input', ''),
+		'sender_phone' => array('PLG_HIKASHOPSHIPPING_INPOST_HIKA_SENDER_PHONE', 'input', ''),
+		'sender_street' => array('PLG_HIKASHOPSHIPPING_INPOST_HIKA_SENDER_STREET', 'input', ''),
+		'sender_building' => array('PLG_HIKASHOPSHIPPING_INPOST_HIKA_SENDER_BUILDING', 'input', ''),
+		'sender_city' => array('PLG_HIKASHOPSHIPPING_INPOST_HIKA_SENDER_CITY', 'input', ''),
+		'sender_postcode' => array('PLG_HIKASHOPSHIPPING_INPOST_HIKA_SENDER_POSTCODE', 'input', ''),
 		// Domyślny rozmiar paczki
-		'default_parcel_size' => array('DEFAULT_PARCEL_SIZE', 'list', array(
-			'small' => 'Mała (A)',
-			'medium' => 'Średnia (B)',
-			'large' => 'Duża (C)'
+		'default_parcel_size' => array('PLG_HIKASHOPSHIPPING_INPOST_HIKA_PARCEL_SIZE', 'list', array(
+			'small' => 'PLG_HIKASHOPSHIPPING_INPOST_HIKA_SIZE_SMALL',
+			'medium' => 'PLG_HIKASHOPSHIPPING_INPOST_HIKA_SIZE_MEDIUM',
+			'large' => 'PLG_HIKASHOPSHIPPING_INPOST_HIKA_SIZE_LARGE'
 		)),
 		// Mapa GeoWidget
-		'map_type' => array('MAP_TYPE', 'list', array(
+		'map_type' => array('PLG_HIKASHOPSHIPPING_INPOST_HIKA_MAP_TYPE', 'list', array(
 			'osm' => 'OpenStreetMap',
 			'google' => 'Google Maps'
 		)),
-		'google_api_key' => array('GOOGLE_API_KEY', 'input', ''),
-		'default_lat' => array('DEFAULT_LAT', 'input', '52.2297'),
-		'default_lng' => array('DEFAULT_LNG', 'input', '21.0122'),
-		'default_zoom' => array('DEFAULT_ZOOM', 'input', ''),
-		'show_parcel_lockers' => array('SHOW_PARCEL_LOCKERS', 'boolean', '1'),
-		'show_pops' => array('SHOW_POPS', 'boolean', '0'),
-		'debug' => array('INPOST_DEBUG', 'boolean', '0')
+		'google_api_key' => array('PLG_HIKASHOPSHIPPING_INPOST_HIKA_GOOGLE_KEY', 'input', ''),
+		'default_lat' => array('PLG_HIKASHOPSHIPPING_INPOST_HIKA_DEFAULT_LAT', 'input', '52.2297'),
+		'default_lng' => array('PLG_HIKASHOPSHIPPING_INPOST_HIKA_DEFAULT_LNG', 'input', '21.0122'),
+		'default_zoom' => array('PLG_HIKASHOPSHIPPING_INPOST_HIKA_DEFAULT_ZOOM', 'input', ''),
+		'show_parcel_lockers' => array('PLG_HIKASHOPSHIPPING_INPOST_HIKA_SHOW_LOCKERS', 'boolean', '1'),
+		'show_pops' => array('PLG_HIKASHOPSHIPPING_INPOST_HIKA_SHOW_POPS', 'boolean', '0'),
+		'debug' => array('PLG_HIKASHOPSHIPPING_INPOST_HIKA_DEBUG', 'boolean', '0')
 	);
 
 	public function __construct(&$subject, $config)
