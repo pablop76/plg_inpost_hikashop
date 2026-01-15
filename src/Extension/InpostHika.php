@@ -461,22 +461,23 @@ class InpostHika extends \hikashopShippingPlugin
 			
 			$this->debug('Shipment created successfully', ['shipment_id' => $result->id], $shippingParams);
 			
-			// Sprawdź czy zamówienie jest potwierdzone/opłacone - tylko wtedy opłacaj przesyłkę
-			$confirmedStatuses = array('confirmed', 'shipped');
-			$orderStatus = $order->order_status ?? '';
+			// Zawsze próbuj opłacić przesyłkę
+			$buyResult = $this->buyShipmentOffer($result->id, $shippingParams);
 			
-			if (in_array($orderStatus, $confirmedStatuses)) {
-				// Zamówienie potwierdzone - opłać przesyłkę
-				$buyResult = $this->buyShipmentOffer($result->id, $shippingParams);
+			if ($buyResult && isset($buyResult->status) && $buyResult->status === 'confirmed') {
+				$app->enqueueMessage('Przesyłka InPost utworzona i opłacona! ID: ' . $result->id, 'success');
+			} elseif ($buyResult && isset($buyResult->_no_offer)) {
+				// Brak środków - usuń ID przesyłki
+				$query = $db->getQuery(true)
+					->update($db->quoteName('#__hikashop_order'))
+					->set($db->quoteName('inpost_shipment_id') . ' = NULL')
+					->where($db->quoteName('order_id') . ' = ' . (int)$order->order_id);
+				$db->setQuery($query);
+				$db->execute();
 				
-				if ($buyResult && isset($buyResult->status) && $buyResult->status === 'confirmed') {
-					$app->enqueueMessage('Przesyłka InPost utworzona i opłacona! ID: ' . $result->id, 'success');
-				} else {
-					$app->enqueueMessage('Przesyłka InPost utworzona! ID: ' . $result->id . ' (wymaga opłacenia w Managerze Paczek)', 'warning');
-				}
+				$app->enqueueMessage('Nie można utworzyć przesyłki - brak środków na koncie InPost. Doładuj konto w Managerze Paczek i spróbuj ponownie.', 'error');
 			} else {
-				// Zamówienie nieopłacone - tylko utwórz przesyłkę, nie opłacaj
-				$app->enqueueMessage('Przesyłka InPost utworzona (nieopłacona)! ID: ' . $result->id . '. Opłać gdy zamówienie zostanie potwierdzone.', 'warning');
+				$app->enqueueMessage('Przesyłka InPost utworzona! ID: ' . $result->id . ' (wymaga opłacenia w Managerze Paczek)', 'warning');
 			}
 			
 			// Przekieruj z powrotem na stronę zamówienia
