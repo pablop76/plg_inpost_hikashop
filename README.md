@@ -1,5 +1,7 @@
 # InPost Paczkomaty - HikaShop Shipping Plugin
 
+> ⚠️ **UWAGA:** Ta wtyczka nie jest przeznaczona do użytku komercyjnego. Nie przeszła wszystkich testów i może zawierać błędy. Używasz na własną odpowiedzialność.
+
 Plugin wysyłkowy dla HikaShop (Joomla 4/5/6) integrujący InPost Paczkomaty z mapą GeoWidget i **pełną integracją ShipX API** (tworzenie przesyłek i etykiet).
 
 ## Funkcje
