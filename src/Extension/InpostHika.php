@@ -345,7 +345,7 @@ class InpostHika extends \hikashopShippingPlugin
 	}
 	
 	/**
-	 * Anuluje starą przesyłkę i tworzy nową
+	 * Anuluje starą przesyłkę i wraca do stanu początkowego
 	 */
 	protected function handleRecreateShipment($order, $lockerName, $shippingParams)
 	{
@@ -373,8 +373,11 @@ class InpostHika extends \hikashopShippingPlugin
 		$db->setQuery($query);
 		$db->execute();
 		
-		// Utwórz nową przesyłkę
-		$this->handleCreateShipment($order, $lockerName, $shippingParams);
+		$app->enqueueMessage('Stara przesyłka została usunięta. Możesz utworzyć nową.', 'message');
+		
+		// Przekieruj z powrotem na stronę zamówienia
+		$redirectUrl = 'index.php?option=com_hikashop&ctrl=order&task=edit&cid=' . (int)$order->order_id;
+		$app->redirect(Route::_($redirectUrl, false));
 	}
 	
 	/**
