@@ -201,16 +201,17 @@ class InpostHika extends \hikashopShippingPlugin
 				echo '</button>';
 				echo '</form>';
 			} else {
-				// Przesyłka nieopłacona - pokaż przycisk opłacenia
+				// Przesyłka nieopłacona - pokaż przycisk ponownego utworzenia
 				echo '<form method="post" style="display:inline-block; margin-top:10px; margin-right:10px;">';
-				echo '<input type="hidden" name="inpost_action" value="buy_shipment" />';
+				echo '<input type="hidden" name="inpost_action" value="recreate_shipment" />';
 				echo '<input type="hidden" name="order_id" value="' . (int)$order->order_id . '" />';
+				echo '<input type="hidden" name="locker_name" value="' . htmlspecialchars($lockerCode) . '" />';
 				echo HTMLHelper::_('form.token');
 				echo '<button type="submit" class="btn btn-small btn-warning" style="background:#ffc107; color:#333; padding:8px 15px; border-radius:4px; border:none; cursor:pointer;">';
-				echo '💳 Opłać przesyłkę';
+				echo '🔄 Utwórz ponownie';
 				echo '</button>';
 				echo '</form>';
-				echo '<small style="color:#856404; display:block; margin-top:5px;">Przesyłka utworzona, ale nieopłacona. Etykieta dostępna po opłaceniu.</small>';
+				echo '<small style="color:#856404; display:block; margin-top:5px;">Przesyłka nieopłacona - doładuj konto InPost i utwórz ponownie.</small>';
 			}
 		} else {
 			// Sprawdź czy skonfigurowano API
@@ -257,7 +258,7 @@ class InpostHika extends \hikashopShippingPlugin
 		}
 		
 		// Weryfikuj token dla POST
-		if (in_array($action, ['create_shipment', 'get_label'])) {
+		if (in_array($action, ['create_shipment', 'get_label', 'recreate_shipment'])) {
 			Session::checkToken() or die('Invalid Token');
 		}
 		
@@ -267,6 +268,11 @@ class InpostHika extends \hikashopShippingPlugin
 			case 'create_shipment':
 				$lockerName = $input->getString('locker_name', '');
 				$this->handleCreateShipment($order, $lockerName, $shippingParams);
+				break;
+				
+			case 'recreate_shipment':
+				$lockerName = $input->getString('locker_name', '');
+				$this->handleRecreateShipment($order, $lockerName, $shippingParams);
 				break;
 				
 			case 'get_label':
@@ -336,6 +342,39 @@ class InpostHika extends \hikashopShippingPlugin
 		// Przekieruj z powrotem na stronę zamówienia
 		$redirectUrl = 'index.php?option=com_hikashop&ctrl=order&task=edit&cid=' . (int)$order->order_id;
 		$app->redirect(Route::_($redirectUrl, false));
+	}
+	
+	/**
+	 * Anuluje starą przesyłkę i tworzy nową
+	 */
+	protected function handleRecreateShipment($order, $lockerName, $shippingParams)
+	{
+		$app = Factory::getApplication();
+		$db = Factory::getContainer()->get(DatabaseInterface::class);
+		
+		// Pobierz stare shipment_id
+		$query = $db->getQuery(true)
+			->select($db->quoteName('inpost_shipment_id'))
+			->from($db->quoteName('#__hikashop_order'))
+			->where($db->quoteName('order_id') . ' = ' . (int)$order->order_id);
+		$db->setQuery($query);
+		$oldShipmentId = $db->loadResult();
+		
+		// Anuluj starą przesyłkę (best effort)
+		if (!empty($oldShipmentId)) {
+			$this->cancelShipment($oldShipmentId, $shippingParams);
+		}
+		
+		// Wyczyść stare ID
+		$query = $db->getQuery(true)
+			->update($db->quoteName('#__hikashop_order'))
+			->set($db->quoteName('inpost_shipment_id') . ' = NULL')
+			->where($db->quoteName('order_id') . ' = ' . (int)$order->order_id);
+		$db->setQuery($query);
+		$db->execute();
+		
+		// Utwórz nową przesyłkę
+		$this->handleCreateShipment($order, $lockerName, $shippingParams);
 	}
 	
 	/**
