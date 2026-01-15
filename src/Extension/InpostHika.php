@@ -314,7 +314,7 @@ class InpostHika extends \hikashopShippingPlugin
 		if ($buyResult && isset($buyResult->status) && $buyResult->status === 'confirmed') {
 			$app->enqueueMessage('Przesyłka InPost opłacona! ID: ' . $shipmentId, 'success');
 		} elseif ($buyResult && isset($buyResult->_no_offer)) {
-			// Oferta wygasła/brak offer_id – spróbuj anulować starą przesyłkę w ShipX, a następnie usuń ID z zamówienia
+			// Brak dostępnej oferty - prawdopodobnie brak środków na koncie InPost lub oferta wygasła
 			$cancelOk = $this->cancelShipment($shipmentId, $shippingParams);
 			$query = $db->getQuery(true)
 				->update($db->quoteName('#__hikashop_order'))
@@ -324,8 +324,7 @@ class InpostHika extends \hikashopShippingPlugin
 			$db->execute();
 
 			$app->enqueueMessage(
-				'Oferta InPost wygasła/brak offer_id. ' . ($cancelOk ? 'Stara przesyłka została anulowana. ' : 'Nie udało się anulować starej przesyłki. ') .
-				'Utwórz nową przesyłkę i opłać ponownie.',
+				'Nie można opłacić przesyłki. Sprawdź stan konta i weryfikację w Managerze Paczek InPost, a następnie spróbuj ponownie.',
 				'error'
 			);
 		} elseif ($apiError || $httpCode) {
