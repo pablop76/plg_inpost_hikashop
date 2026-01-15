@@ -300,9 +300,36 @@ class InpostHika extends \hikashopShippingPlugin
 		}
 		
 		$buyResult = $this->buyShipmentOffer($shipmentId, $shippingParams);
-		
+
+		// Wyciągnij kod HTTP i komunikat błędu jeśli zwróciło API ShipX
+		$httpCode = is_object($buyResult) && isset($buyResult->_httpCode) ? (int)$buyResult->_httpCode : null;
+		$apiError = null;
+		if (is_object($buyResult)) {
+			$apiError = $buyResult->error ?? $buyResult->message ?? null;
+			if ($apiError && isset($buyResult->description)) {
+				$apiError .= ' - ' . $buyResult->description;
+			}
+		}
+
 		if ($buyResult && isset($buyResult->status) && $buyResult->status === 'confirmed') {
 			$app->enqueueMessage('Przesyłka InPost opłacona! ID: ' . $shipmentId, 'success');
+		} elseif ($buyResult && isset($buyResult->_no_offer)) {
+			// Oferta wygasła/brak offer_id – spróbuj anulować starą przesyłkę w ShipX, a następnie usuń ID z zamówienia
+			$cancelOk = $this->cancelShipment($shipmentId, $shippingParams);
+			$query = $db->getQuery(true)
+				->update($db->quoteName('#__hikashop_order'))
+				->set($db->quoteName('inpost_shipment_id') . ' = NULL')
+				->where($db->quoteName('order_id') . ' = ' . (int)$order->order_id);
+			$db->setQuery($query);
+			$db->execute();
+
+			$app->enqueueMessage(
+				'Oferta InPost wygasła/brak offer_id. ' . ($cancelOk ? 'Stara przesyłka została anulowana. ' : 'Nie udało się anulować starej przesyłki. ') .
+				'Utwórz nową przesyłkę i opłać ponownie.',
+				'error'
+			);
+		} elseif ($apiError || $httpCode) {
+			$app->enqueueMessage('Nie udało się opłacić przesyłki. ' . ($httpCode ? 'HTTP ' . $httpCode . ': ' : '') . ($apiError ?: 'Brak szczegółów błędu.') . ' Sprawdź w Managerze Paczek.', 'error');
 		} else {
 			$app->enqueueMessage('Nie udało się opłacić przesyłki. Sprawdź w Managerze Paczek.', 'error');
 		}
@@ -507,6 +534,9 @@ class InpostHika extends \hikashopShippingPlugin
 		
 		if (!$offerId) {
 			$this->debug('No available offer_id found', null, $shippingParams);
+			if (is_object($shipment)) {
+				$shipment->_no_offer = true;
+			}
 			return $shipment;
 		}
 		
@@ -520,6 +550,21 @@ class InpostHika extends \hikashopShippingPlugin
 		
 		$this->debug('Buy shipment result', $buyResult, $shippingParams);
 		return $buyResult;
+	}
+
+	/**
+	 * Anuluje istniejącą przesyłkę w ShipX (best effort)
+	 */
+	protected function cancelShipment($shipmentId, $shippingParams)
+	{
+		$result = $this->callShipXApi(
+			'POST',
+			'/v1/shipments/' . $shipmentId . '/cancel',
+			null,
+			$shippingParams
+		);
+		$this->debug('Cancel shipment result', $result, $shippingParams);
+		return $result && isset($result->status) ? $result->status === 'cancelled' : false;
 	}
 	
 	/**
@@ -640,8 +685,19 @@ class InpostHika extends \hikashopShippingPlugin
 		if ($rawResponse) {
 			return ($httpCode >= 200 && $httpCode < 300) ? $response : null;
 		}
+
+		$decoded = json_decode($response);
+		// Zachowaj kod HTTP w obiekcie wyniku aby łatwiej diagnozować błędy
+		if (is_object($decoded)) {
+			$decoded->_httpCode = $httpCode;
+			return $decoded;
+		}
 		
-		return json_decode($response);
+		// Jeśli nie ma JSON-a, zwróć surowe dane z kodem HTTP
+		$wrapper = new \stdClass();
+		$wrapper->_httpCode = $httpCode;
+		$wrapper->_raw = $response;
+		return $wrapper;
 	}
 	
 	/**
