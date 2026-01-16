@@ -1236,7 +1236,21 @@ class InpostHika extends \hikashopShippingPlugin
 			try {
 				easyPack.modalMap(function(point, modal){
 					window._inpostMapOpening = false;
-					if(!point) return;
+					
+					// Funkcja czyszczaca kontener mapy
+					function cleanupMap(){
+						setTimeout(function(){
+							var modals = document.querySelectorAll('.easypack-modal, .easypack-widget');
+							modals.forEach(function(el){
+								if(el && el.parentNode) el.parentNode.removeChild(el);
+							});
+						}, 100);
+					}
+					
+					if(!point){
+						cleanupMap();
+						return;
+					}
 					
 					var text = point.name;
 					if(point.address && point.address.line1) text += ' - ' + point.address.line1;
@@ -1256,6 +1270,7 @@ class InpostHika extends \hikashopShippingPlugin
 					xhr.send('inpost_locker_save=' + encodeURIComponent(text));
 					
 					if(modal && typeof modal.closeModal === 'function') modal.closeModal();
+					cleanupMap();
 				}, {width:1000, height:650});
 			} catch(e) {
 				window._inpostMapOpening = false;
