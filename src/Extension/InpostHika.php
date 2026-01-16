@@ -22,8 +22,12 @@ class InpostHika extends \hikashopShippingPlugin
 	// GeoWidget - stare API (bez tokena) i nowe API v5
 	const GEO_WIDGET_JS_OLD = 'https://geowidget.easypack24.net/js/sdk-for-javascript.js';
 	const GEO_WIDGET_CSS_OLD = 'https://geowidget.easypack24.net/css/easypack.css';
+	// GeoWidget v5 - produkcja
 	const GEO_WIDGET_JS = 'https://geowidget.inpost.pl/inpost-geowidget.js';
 	const GEO_WIDGET_CSS = 'https://geowidget.inpost.pl/inpost-geowidget.css';
+	// GeoWidget v5 - sandbox
+	const GEO_WIDGET_JS_SANDBOX = 'https://sandbox-easy-geowidget-sdk.easypack24.net/inpost-geowidget.js';
+	const GEO_WIDGET_CSS_SANDBOX = 'https://sandbox-easy-geowidget-sdk.easypack24.net/inpost-geowidget.css';
 	
 	// ShipX API - Produkcja
 	const SHIPX_API_URL = 'https://api-shipx-pl.easypack24.net';
@@ -65,7 +69,8 @@ class InpostHika extends \hikashopShippingPlugin
 		// Mapa GeoWidget - wybór API
 		'geowidget_api' => array('PLG_HIKASHOPSHIPPING_INPOST_HIKA_GEOWIDGET_API', 'list', array(
 			'old' => 'PLG_HIKASHOPSHIPPING_INPOST_HIKA_GEOWIDGET_API_OLD',
-			'v5' => 'PLG_HIKASHOPSHIPPING_INPOST_HIKA_GEOWIDGET_API_V5'
+			'v5' => 'PLG_HIKASHOPSHIPPING_INPOST_HIKA_GEOWIDGET_API_V5',
+			'v5_sandbox' => 'PLG_HIKASHOPSHIPPING_INPOST_HIKA_GEOWIDGET_API_V5_SANDBOX'
 		)),
 		'geowidget_token' => array('PLG_HIKASHOPSHIPPING_INPOST_HIKA_GEOWIDGET_TOKEN', 'input', ''),
 		'geowidget_config' => array('PLG_HIKASHOPSHIPPING_INPOST_HIKA_GEOWIDGET_CONFIG', 'list', array(
@@ -1087,8 +1092,15 @@ class InpostHika extends \hikashopShippingPlugin
 		$apiJs = addslashes($geowidgetApi);
 		$tokenJs = addslashes($geowidgetToken);
 		$configJs = addslashes($geowidgetConfig);
-		$sdkJsV5 = self::GEO_WIDGET_JS;
-		$sdkCssV5 = self::GEO_WIDGET_CSS;
+		
+		// Wybierz URL SDK w zależności od trybu API
+		if ($geowidgetApi === 'v5_sandbox') {
+			$sdkJsV5 = self::GEO_WIDGET_JS_SANDBOX;
+			$sdkCssV5 = self::GEO_WIDGET_CSS_SANDBOX;
+		} else {
+			$sdkJsV5 = self::GEO_WIDGET_JS;
+			$sdkCssV5 = self::GEO_WIDGET_CSS;
+		}
 		
 		$script = "
 (function(){
@@ -1238,21 +1250,16 @@ class InpostHika extends \hikashopShippingPlugin
 	}
 	
 	function openMapV5(){
-		// Nowe API v5 - inpost-geowidget element
+		// Nowe API v5 - inpost-geowidget element w popup
 		loadSDKv5(function(){
 			closeModal();
 			
 			var overlay = document.createElement('div');
 			overlay.id = 'inpost-modal-overlay';
-			overlay.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.7);z-index:99999;display:flex;align-items:center;justify-content:center;';
+			overlay.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.5);z-index:99999;display:flex;align-items:center;justify-content:center;';
 			
 			var modal = document.createElement('div');
 			modal.style.cssText = 'background:#fff;width:95%;max-width:1000px;height:85vh;max-height:700px;border-radius:8px;overflow:hidden;position:relative;box-shadow:0 4px 20px rgba(0,0,0,0.3);';
-			
-			var closeBtn = document.createElement('button');
-			closeBtn.innerHTML = '&times;';
-			closeBtn.style.cssText = 'position:absolute;top:10px;right:15px;z-index:100;background:#fff;border:2px solid #333;font-size:28px;font-weight:bold;cursor:pointer;width:40px;height:40px;border-radius:50%;box-shadow:0 2px 5px rgba(0,0,0,0.2);color:#333;display:flex;align-items:center;justify-content:center;padding:0;line-height:1;';
-			closeBtn.onclick = function(){ closeModal(); };
 			
 			var geowidget = document.createElement('inpost-geowidget');
 			geowidget.setAttribute('token', geowidgetToken);
@@ -1261,7 +1268,6 @@ class InpostHika extends \hikashopShippingPlugin
 			geowidget.setAttribute('onpoint', 'inpostPointSelected_{$widgetId}');
 			geowidget.style.cssText = 'display:block;width:100%;height:100%;';
 			
-			modal.appendChild(closeBtn);
 			modal.appendChild(geowidget);
 			overlay.appendChild(modal);
 			document.body.appendChild(overlay);
@@ -1284,7 +1290,7 @@ class InpostHika extends \hikashopShippingPlugin
 		var btn = document.getElementById(widgetId + '_btn');
 		if(btn) btn.textContent = '{$loadingMsg}';
 		
-		if(geowidgetApi === 'v5'){
+		if(geowidgetApi === 'v5' || geowidgetApi === 'v5_sandbox'){
 			openMapV5();
 		} else {
 			openMapOld();
