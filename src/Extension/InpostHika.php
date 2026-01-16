@@ -1120,31 +1120,8 @@ class InpostHika extends \hikashopShippingPlugin
 		document.head.appendChild(link);
 	}
 	
-	// Funkcja resetujaca SDK do stanu poczatkowego
-	function resetSDK(){
-		// Usun stare skrypty SDK
-		var oldScripts = document.querySelectorAll('script[src*=\"geowidget\"]');
-		oldScripts.forEach(function(s){ s.remove(); });
-		
-		// Usun modalne okna
-		var oldModals = document.querySelectorAll('.easypack-modal, .easypack-widget, [class*=\"easypack\"]');
-		oldModals.forEach(function(el){ el.remove(); });
-		
-		// Reset globalnych zmiennych
-		window._inpostSDKLoaded = false;
-		window._inpostSDKLoading = false;
-		window._inpostInitDone = false;
-		window._inpostCallbacks = [];
-		window.easyPack = undefined;
-	}
-	
-	// Załaduj SDK od nowa
+	// Załaduj SDK (singleton - tylko raz)
 	function loadSDK(callback){
-		// Jesli mapa byla juz otwierana, resetuj SDK
-		if(window._inpostMapWasOpened){
-			resetSDK();
-		}
-		
 		// W trakcie ładowania - dodaj do kolejki
 		if(window._inpostSDKLoading){
 			window._inpostCallbacks = window._inpostCallbacks || [];
@@ -1152,8 +1129,16 @@ class InpostHika extends \hikashopShippingPlugin
 			return;
 		}
 		
-		// Już załadowane i zainicjalizowane - od razu callback
+		// Już załadowane - od razu callback
 		if(window._inpostSDKLoaded && window._inpostInitDone && window.easyPack){
+			callback();
+			return;
+		}
+		
+		// Sprawdz czy SDK juz jest w DOM
+		var existingScript = document.querySelector('script[src*=\"geowidget\"][src*=\"sdk-for-javascript\"]');
+		if(existingScript && window.easyPack){
+			if(!window._inpostInitDone) initEasyPack();
 			callback();
 			return;
 		}
@@ -1163,7 +1148,7 @@ class InpostHika extends \hikashopShippingPlugin
 		window._inpostCallbacks = [callback];
 		
 		var script = document.createElement('script');
-		script.src = SDK_JS + '?t=' + Date.now(); // cache bust
+		script.src = SDK_JS;
 		script.onload = function(){
 			window._inpostSDKLoaded = true;
 			window._inpostSDKLoading = false;
@@ -1216,6 +1201,13 @@ class InpostHika extends \hikashopShippingPlugin
 		var btn = document.getElementById(widgetId + '_btn');
 		if(btn) btn.textContent = '{$loadingMsg}';
 		
+		// Jesli mapa byla juz otwarta, trzeba przeladowac strone
+		if(window._inpostMapWasOpened){
+			sessionStorage.setItem('inpost_open_map', '1');
+			location.reload();
+			return;
+		}
+		
 		// Zabezpieczenie przed wielokrotnym kliknięciem
 		if(window._inpostMapOpening) return;
 		window._inpostMapOpening = true;
@@ -1262,6 +1254,12 @@ class InpostHika extends \hikashopShippingPlugin
 				console.error('InPost map error:', e);
 			}
 		});
+	}
+	
+	// Sprawdz czy otworzyc mape po refreshu
+	if(sessionStorage.getItem('inpost_open_map') === '1'){
+		sessionStorage.removeItem('inpost_open_map');
+		setTimeout(function(){ openMap(); }, 300);
 	}
 	
 	document.addEventListener('click', function(e){
