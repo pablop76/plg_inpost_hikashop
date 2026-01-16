@@ -1292,7 +1292,7 @@ class InpostHika extends \hikashopShippingPlugin
 		});
 	}
 	
-	setTimeout(function(){ loadSDK(function(){}); }, 100);
+	// SDK ladowane tylko na klikniecie - nie preloadujemy
 })();
 ";
 		$doc->addScriptDeclaration($script);
