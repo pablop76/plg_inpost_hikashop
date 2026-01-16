@@ -1095,6 +1095,11 @@ class InpostHika extends \hikashopShippingPlugin
 		
 		$script = "
 (function(){
+	// Zapobiegaj wielokrotnemu uruchomieniu dla tego samego widgetu
+	if(window._inpostWidgetInit && window._inpostWidgetInit['{$widgetId}']) return;
+	window._inpostWidgetInit = window._inpostWidgetInit || {};
+	window._inpostWidgetInit['{$widgetId}'] = true;
+	
 	var widgetId = '{$widgetId}';
 	var SDK_JS = '{$sdkJs}';
 	var SDK_CSS = '{$sdkCss}';
@@ -1275,10 +1280,7 @@ class InpostHika extends \hikashopShippingPlugin
 			} catch(e) {
 				window._inpostMapOpening = false;
 				console.error('InPost map error:', e);
-				// Spróbuj zresetować SDK i otworzyć ponownie
-				window._inpostInitDone = false;
-				initEasyPack();
-				setTimeout(function(){ openMap(); }, 200);
+				alert('Wystapil blad mapy InPost. Odswiez strone i sprobuj ponownie.');
 			}
 		});
 	}
