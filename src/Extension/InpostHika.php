@@ -1228,32 +1228,15 @@ class InpostHika extends \hikashopShippingPlugin
 			
 			if(!window.easyPack || !window._inpostInitDone){
 				window._inpostMapOpening = false;
-				alert('Błąd ładowania mapy');
+				alert('Blad ladowania mapy');
 				return;
 			}
-			
-			// Usun stare modalne kontenery mapy jesli istnieja
-			var oldModals = document.querySelectorAll('.easypack-modal, .easypack-widget, [class*=\"easypack\"]');
-			oldModals.forEach(function(el){
-				if(el && el.parentNode) el.parentNode.removeChild(el);
-			});
 			
 			try {
 				easyPack.modalMap(function(point, modal){
 					window._inpostMapOpening = false;
 					
-					// Funkcja czyszczaca kontener mapy
-					function cleanupMap(){
-						setTimeout(function(){
-							var modals = document.querySelectorAll('.easypack-modal, .easypack-widget');
-							modals.forEach(function(el){
-								if(el && el.parentNode) el.parentNode.removeChild(el);
-							});
-						}, 100);
-					}
-					
 					if(!point){
-						cleanupMap();
 						return;
 					}
 					
@@ -1275,7 +1258,6 @@ class InpostHika extends \hikashopShippingPlugin
 					xhr.send('inpost_locker_save=' + encodeURIComponent(text));
 					
 					if(modal && typeof modal.closeModal === 'function') modal.closeModal();
-					cleanupMap();
 				}, {width:1000, height:650});
 			} catch(e) {
 				window._inpostMapOpening = false;
