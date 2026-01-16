@@ -8,12 +8,14 @@ Plugin wysyłkowy dla HikaShop (Joomla 4/5/6) integrujący InPost Paczkomaty z m
 
 ### Wybór paczkomatu (Frontend)
 
-- ✅ Wybór paczkomatu na mapie (GeoWidget SDK)
+- ✅ Wybór paczkomatu na mapie (GeoWidget)
+- ✅ **Wybór wersji API mapy:**
+  - **Stare API** - działa na localhost bez tokena
+  - **Nowe API v5** - wymaga tokena dla domeny (generowany w Manager Paczek)
 - ✅ Obsługa paczkomatów i punktów POP
 - ✅ Zapis wybranego paczkomatu w zamówieniu
 - ✅ Walidacja - blokada zamówienia bez wybranego punktu
-- ✅ Konfiguracja typu mapy: OpenStreetMap lub Google Maps
-- ✅ Konfigurowalne współrzędne i zoom mapy
+- ✅ Modal z mapą i przyciskiem zamknięcia
 
 ### ShipX API (Admin - tworzenie przesyłek)
 
@@ -72,28 +74,28 @@ Plugin wysyłkowy dla HikaShop (Joomla 4/5/6) integrujący InPost Paczkomaty z m
 
 ### Ustawienia mapy
 
-| Opcja                  | Opis                               | Domyslnie |
-| ---------------------- | ---------------------------------- | --------- |
-| Typ mapy               | OpenStreetMap lub Google Maps      | OSM       |
-| Klucz API Google       | Wymagany dla Google Maps           | -         |
-| Szerokość geogr. (lat) | Domyślna pozycja mapy              | 52.2297   |
-| Długość geogr. (lng)   | Domyślna pozycja mapy              | 21.0122   |
-| Domyślny zoom          | Poziom przybliżenia (pusty = auto) | auto      |
-| Pokaż paczkomaty       | Włącz paczkomaty                   | Tak       |
-| Pokaż punkty POP       | Włącz punkty POP                   | Nie       |
-| Tryb debug             | Logowanie do pliku                 | Nie       |
+| Opcja                   | Opis                                                              | Domyslnie |
+| ----------------------- | ----------------------------------------------------------------- | --------- |
+| **Wersja API mapy**     | Stare API (localhost) / Nowe API v5 (wymaga tokena)               | Stare     |
+| Token GeoWidget         | Token publiczny z Manager Paczek (tylko dla API v5)               | -         |
+| Konfiguracja punktów    | parcelCollect / parcelCollectPayment / parcelCollect247 (API v5)  | parcelCollect |
+| Szerokość geogr. (lat)  | Domyślna pozycja mapy                                             | 52.2297   |
+| Długość geogr. (lng)    | Domyślna pozycja mapy                                             | 21.0122   |
+| Domyślny zoom           | Poziom przybliżenia (pusty = auto)                                | auto      |
+| Pokaż paczkomaty        | Włącz paczkomaty (stare API)                                      | Tak       |
+| Pokaż punkty POP        | Włącz punkty POP (stare API)                                      | Nie       |
+| Tryb debug              | Logowanie do pliku                                                | Nie       |
+
+#### Różnice między wersjami API
+
+| Cecha                   | Stare API                    | Nowe API v5                        |
+| ----------------------- | ---------------------------- | ---------------------------------- |
+| Token                   | Nie wymaga                   | Wymaga (z Manager Paczek)          |
+| Localhost               | ✅ Działa                    | ❌ Wymaga zarejestrowanej domeny   |
+| Konfiguracja punktów    | Paczkomaty + POP (checkboxy) | parcelCollect, parcelCollectPayment, parcelCollect247, parcelSend |
 
 4. Ustaw cenę wysyłki, strefę i inne standardowe opcje HikaShop
 5. Zapisz
-
-### Automatyczny zoom mapy
-
-Gdy pole "Domyślny zoom" jest puste, plugin automatycznie dobiera zoom:
-
-- **OpenStreetMap**: zoom 13
-- **Google Maps**: zoom 6
-
-Możesz też wpisać własną wartość (1-20).
 
 ## Konfiguracja ShipX API
 
