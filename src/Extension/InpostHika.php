@@ -19,9 +19,11 @@ use Joomla\Database\DatabaseInterface;
 
 class InpostHika extends \hikashopShippingPlugin
 {
-	// GeoWidget SDK - zawsze produkcja (mapa nie wymaga autoryzacji)
-	const GEO_WIDGET_JS = 'https://geowidget.easypack24.net/js/sdk-for-javascript.js';
-	const GEO_WIDGET_CSS = 'https://geowidget.easypack24.net/css/easypack.css';
+	// GeoWidget - stare API (bez tokena) i nowe API v5
+	const GEO_WIDGET_JS_OLD = 'https://geowidget.easypack24.net/js/sdk-for-javascript.js';
+	const GEO_WIDGET_CSS_OLD = 'https://geowidget.easypack24.net/css/easypack.css';
+	const GEO_WIDGET_JS = 'https://geowidget.inpost.pl/inpost-geowidget.js';
+	const GEO_WIDGET_CSS = 'https://geowidget.inpost.pl/inpost-geowidget.css';
 	
 	// ShipX API - Produkcja
 	const SHIPX_API_URL = 'https://api-shipx-pl.easypack24.net';
@@ -60,12 +62,18 @@ class InpostHika extends \hikashopShippingPlugin
 			'medium' => 'PLG_HIKASHOPSHIPPING_INPOST_HIKA_SIZE_MEDIUM',
 			'large' => 'PLG_HIKASHOPSHIPPING_INPOST_HIKA_SIZE_LARGE'
 		)),
-		// Mapa GeoWidget
-		'map_type' => array('PLG_HIKASHOPSHIPPING_INPOST_HIKA_MAP_TYPE', 'list', array(
-			'osm' => 'OpenStreetMap',
-			'google' => 'Google Maps'
+		// Mapa GeoWidget - wybór API
+		'geowidget_api' => array('PLG_HIKASHOPSHIPPING_INPOST_HIKA_GEOWIDGET_API', 'list', array(
+			'old' => 'PLG_HIKASHOPSHIPPING_INPOST_HIKA_GEOWIDGET_API_OLD',
+			'v5' => 'PLG_HIKASHOPSHIPPING_INPOST_HIKA_GEOWIDGET_API_V5'
 		)),
-		'google_api_key' => array('PLG_HIKASHOPSHIPPING_INPOST_HIKA_GOOGLE_KEY', 'input', ''),
+		'geowidget_token' => array('PLG_HIKASHOPSHIPPING_INPOST_HIKA_GEOWIDGET_TOKEN', 'input', ''),
+		'geowidget_config' => array('PLG_HIKASHOPSHIPPING_INPOST_HIKA_GEOWIDGET_CONFIG', 'list', array(
+			'parcelCollect' => 'PLG_HIKASHOPSHIPPING_INPOST_HIKA_CONFIG_COLLECT',
+			'parcelCollectPayment' => 'PLG_HIKASHOPSHIPPING_INPOST_HIKA_CONFIG_COLLECT_PAYMENT',
+			'parcelCollect247' => 'PLG_HIKASHOPSHIPPING_INPOST_HIKA_CONFIG_COLLECT_247',
+			'parcelSend' => 'PLG_HIKASHOPSHIPPING_INPOST_HIKA_CONFIG_SEND'
+		)),
 		'default_lat' => array('PLG_HIKASHOPSHIPPING_INPOST_HIKA_DEFAULT_LAT', 'input', '52.2297'),
 		'default_lng' => array('PLG_HIKASHOPSHIPPING_INPOST_HIKA_DEFAULT_LNG', 'input', '21.0122'),
 		'default_zoom' => array('PLG_HIKASHOPSHIPPING_INPOST_HIKA_DEFAULT_ZOOM', 'input', ''),
@@ -1054,44 +1062,33 @@ class InpostHika extends \hikashopShippingPlugin
 		</style>';
 		
 		// Pobierz parametry konfiguracji
-		$apiMode = isset($rate->shipping_params->api_mode) ? $rate->shipping_params->api_mode : 'production';
+		$geowidgetApi = isset($rate->shipping_params->geowidget_api) ? $rate->shipping_params->geowidget_api : 'old';
+		$geowidgetToken = isset($rate->shipping_params->geowidget_token) ? $rate->shipping_params->geowidget_token : '';
+		$geowidgetConfig = isset($rate->shipping_params->geowidget_config) ? $rate->shipping_params->geowidget_config : 'parcelCollect';
 		$showLockers = isset($rate->shipping_params->show_parcel_lockers) ? (int)$rate->shipping_params->show_parcel_lockers : 1;
 		$showPops = isset($rate->shipping_params->show_pops) ? (int)$rate->shipping_params->show_pops : 0;
-		$mapType = isset($rate->shipping_params->map_type) ? $rate->shipping_params->map_type : 'osm';
-		$googleApiKey = isset($rate->shipping_params->google_api_key) ? $rate->shipping_params->google_api_key : '';
-		$defaultLat = isset($rate->shipping_params->default_lat) ? (float)$rate->shipping_params->default_lat : 52.2297;
-		$defaultLng = isset($rate->shipping_params->default_lng) ? (float)$rate->shipping_params->default_lng : 21.0122;
-		$defaultZoom = isset($rate->shipping_params->default_zoom) ? (int)$rate->shipping_params->default_zoom : 14;
 		
-		$this->addWidgetScript($widgetId, $shippingId, $showLockers, $showPops, $mapType, $googleApiKey, $defaultLat, $defaultLng, $defaultZoom, $apiMode);
+		$this->addWidgetScript($widgetId, $shippingId, $geowidgetApi, $geowidgetToken, $geowidgetConfig, $showLockers, $showPops);
 	}
 
-	protected function addWidgetScript($widgetId, $shippingId, $showLockers = 1, $showPops = 0, $mapType = 'osm', $googleApiKey = '', $defaultLat = 52.2297, $defaultLng = 21.0122, $defaultZoom = 10, $apiMode = 'production')
+	protected function addWidgetScript($widgetId, $shippingId, $geowidgetApi = 'old', $geowidgetToken = '', $geowidgetConfig = 'parcelCollect', $showLockers = 1, $showPops = 0)
 	{
 		$doc = Factory::getApplication()->getDocument();
 		$changeLabel = addslashes(Text::_('PLG_HIKASHOPSHIPPING_INPOST_HIKA_CHANGE'));
 		$loadingMsg = addslashes(Text::_('PLG_HIKASHOPSHIPPING_INPOST_HIKA_LOADING'));
 		
-		// Buduj listę typów punktów na podstawie konfiguracji
+		// Buduj typy punktów dla starego API
 		$types = array();
 		if ($showLockers) $types[] = 'parcel_locker';
 		if ($showPops) $types[] = 'pop';
 		if (empty($types)) $types[] = 'parcel_locker';
 		$typesJs = json_encode($types);
 		
-		// Sanityzacja parametrów mapy
-		$mapType = in_array($mapType, array('osm', 'google')) ? $mapType : 'osm';
-		$searchType = $mapType;
-		$googleApiKeyJs = addslashes($googleApiKey);
-		
-		// GeoWidget SDK - zawsze produkcja
-		$sdkJs = self::GEO_WIDGET_JS;
-		$sdkCss = self::GEO_WIDGET_CSS;
-		
-		// Domyślny zoom zależny od typu mapy jeśli nie ustawiony
-		if (empty($defaultZoom) || $defaultZoom == 0) {
-			$defaultZoom = ($mapType === 'google') ? 6 : 13;
-		}
+		$apiJs = addslashes($geowidgetApi);
+		$tokenJs = addslashes($geowidgetToken);
+		$configJs = addslashes($geowidgetConfig);
+		$sdkJsV5 = self::GEO_WIDGET_JS;
+		$sdkCssV5 = self::GEO_WIDGET_CSS;
 		
 		$script = "
 (function(){
@@ -1101,53 +1098,200 @@ class InpostHika extends \hikashopShippingPlugin
 	window._inpostWidgetInit['{$widgetId}'] = true;
 	
 	var widgetId = '{$widgetId}';
+	var geowidgetApi = '{$apiJs}';
+	var geowidgetToken = '{$tokenJs}';
+	var geowidgetConfig = '{$configJs}';
 	var pointTypes = {$typesJs};
-	var mapType = '{$mapType}';
-	var defaultLat = {$defaultLat};
-	var defaultLng = {$defaultLng};
-	var defaultZoom = {$defaultZoom};
+	var sdkJsV5 = '{$sdkJsV5}';
+	var sdkCssV5 = '{$sdkCssV5}';
+	var sdkLoaded = false;
+	var sdkLoading = false;
 	
-	// URL do mapy w osobnym oknie
-	var mapUrl = '/plugins/hikashopshipping/inpost_hika/map.html';
+	function saveSelection(text){
+		var valueEl = document.getElementById(widgetId + '_value');
+		var inputEl = document.getElementById(widgetId + '_input');
+		var btnEl = document.getElementById(widgetId + '_btn');
+		
+		if(valueEl) valueEl.textContent = text;
+		if(inputEl) inputEl.value = text;
+		if(btnEl) btnEl.textContent = '{$changeLabel}';
+		
+		// Zapisz przez AJAX
+		var xhr = new XMLHttpRequest();
+		xhr.open('POST', window.location.href, true);
+		xhr.setRequestHeader('Content-Type', 'application/x-www-form-urlencoded');
+		xhr.send('inpost_locker_save=' + encodeURIComponent(text));
+	}
+	
+	// Globalny callback dla GeoWidget v5
+	window.inpostPointSelected_{$widgetId} = function(point) {
+		console.log('InPost v5 point selected:', point);
+		if(point){
+			var text = point.name;
+			if(point.address_details){
+				if(point.address_details.street) text += ' - ' + point.address_details.street;
+				if(point.address_details.building_number) text += ' ' + point.address_details.building_number;
+				if(point.address_details.city) text += ', ' + point.address_details.city;
+			}
+			closeModal();
+			saveSelection(text);
+		}
+	};
+	
+	// Obsluga wiadomosci z iframe (stare API)
+	window.addEventListener('message', function(e){
+		if(e.data && e.data.type === 'inpost_locker_selected'){
+			console.log('InPost old API point selected:', e.data.locker);
+			closeModal();
+			saveSelection(e.data.locker);
+		}
+	});
+	
+	function loadSDKv5(callback){
+		if(sdkLoaded){
+			callback();
+			return;
+		}
+		if(sdkLoading){
+			var check = setInterval(function(){
+				if(sdkLoaded){
+					clearInterval(check);
+					callback();
+				}
+			}, 100);
+			return;
+		}
+		sdkLoading = true;
+		
+		// Zaladuj CSS
+		if(!document.querySelector('link[href*=\"inpost-geowidget.css\"]')){
+			var css = document.createElement('link');
+			css.rel = 'stylesheet';
+			css.href = sdkCssV5;
+			document.head.appendChild(css);
+		}
+		
+		// Zaladuj JS
+		if(!document.querySelector('script[src*=\"inpost-geowidget.js\"]')){
+			var script = document.createElement('script');
+			script.src = sdkJsV5;
+			script.defer = true;
+			script.onload = function(){
+				sdkLoaded = true;
+				sdkLoading = false;
+				callback();
+			};
+			script.onerror = function(){
+				sdkLoading = false;
+				alert('Nie mozna zaladowac mapy InPost');
+			};
+			document.head.appendChild(script);
+		} else {
+			sdkLoaded = true;
+			sdkLoading = false;
+			callback();
+		}
+	}
+	
+	function closeModal(){
+		var overlay = document.getElementById('inpost-modal-overlay');
+		if(overlay) overlay.remove();
+	}
+	
+	function openMapOld(){
+		// Stare API - iframe z map.html
+		closeModal();
+		
+		var overlay = document.createElement('div');
+		overlay.id = 'inpost-modal-overlay';
+		overlay.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.7);z-index:99999;display:flex;align-items:center;justify-content:center;';
+		
+		var modal = document.createElement('div');
+		modal.style.cssText = 'background:#fff;width:95%;max-width:1000px;height:85vh;max-height:700px;border-radius:8px;overflow:hidden;position:relative;box-shadow:0 4px 20px rgba(0,0,0,0.3);';
+		
+		var closeBtn = document.createElement('button');
+		closeBtn.innerHTML = '&times;';
+		closeBtn.style.cssText = 'position:absolute;top:10px;right:15px;z-index:100;background:#fff;border:2px solid #333;font-size:28px;font-weight:bold;cursor:pointer;width:40px;height:40px;border-radius:50%;box-shadow:0 2px 5px rgba(0,0,0,0.2);color:#333;display:flex;align-items:center;justify-content:center;padding:0;line-height:1;';
+		closeBtn.onclick = function(){ closeModal(); };
+		
+		var iframe = document.createElement('iframe');
+		var url = '/plugins/hikashopshipping/inpost_hika/map.html?types=' + pointTypes.join(',');
+		iframe.src = url;
+		iframe.style.cssText = 'width:100%;height:100%;border:none;';
+		
+		modal.appendChild(closeBtn);
+		modal.appendChild(iframe);
+		overlay.appendChild(modal);
+		document.body.appendChild(overlay);
+		
+		overlay.onclick = function(e){
+			if(e.target === overlay) closeModal();
+		};
+		
+		function escHandler(e){
+			if(e.key === 'Escape'){
+				closeModal();
+				document.removeEventListener('keydown', escHandler);
+			}
+		}
+		document.addEventListener('keydown', escHandler);
+	}
+	
+	function openMapV5(){
+		// Nowe API v5 - inpost-geowidget element
+		loadSDKv5(function(){
+			closeModal();
+			
+			var overlay = document.createElement('div');
+			overlay.id = 'inpost-modal-overlay';
+			overlay.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.7);z-index:99999;display:flex;align-items:center;justify-content:center;';
+			
+			var modal = document.createElement('div');
+			modal.style.cssText = 'background:#fff;width:95%;max-width:1000px;height:85vh;max-height:700px;border-radius:8px;overflow:hidden;position:relative;box-shadow:0 4px 20px rgba(0,0,0,0.3);';
+			
+			var closeBtn = document.createElement('button');
+			closeBtn.innerHTML = '&times;';
+			closeBtn.style.cssText = 'position:absolute;top:10px;right:15px;z-index:100;background:#fff;border:2px solid #333;font-size:28px;font-weight:bold;cursor:pointer;width:40px;height:40px;border-radius:50%;box-shadow:0 2px 5px rgba(0,0,0,0.2);color:#333;display:flex;align-items:center;justify-content:center;padding:0;line-height:1;';
+			closeBtn.onclick = function(){ closeModal(); };
+			
+			var geowidget = document.createElement('inpost-geowidget');
+			geowidget.setAttribute('token', geowidgetToken);
+			geowidget.setAttribute('language', 'pl');
+			geowidget.setAttribute('config', geowidgetConfig);
+			geowidget.setAttribute('onpoint', 'inpostPointSelected_{$widgetId}');
+			geowidget.style.cssText = 'display:block;width:100%;height:100%;';
+			
+			modal.appendChild(closeBtn);
+			modal.appendChild(geowidget);
+			overlay.appendChild(modal);
+			document.body.appendChild(overlay);
+			
+			overlay.onclick = function(e){
+				if(e.target === overlay) closeModal();
+			};
+			
+			function escHandler(e){
+				if(e.key === 'Escape'){
+					closeModal();
+					document.removeEventListener('keydown', escHandler);
+				}
+			}
+			document.addEventListener('keydown', escHandler);
+		});
+	}
 	
 	function openMap(){
 		var btn = document.getElementById(widgetId + '_btn');
 		if(btn) btn.textContent = '{$loadingMsg}';
 		
-		// Buduj URL z parametrami
-		var url = mapUrl + '?types=' + pointTypes.join(',') + '&mapType=' + mapType + '&lat=' + defaultLat + '&lng=' + defaultLng + '&zoom=' + defaultZoom;
-		
-		// Otworz popup
-		var popup = window.open(url, 'inpost_map', 'width=1000,height=700,scrollbars=yes,resizable=yes');
-		
-		if(popup){
-			btn.textContent = '{$changeLabel}';
+		if(geowidgetApi === 'v5'){
+			openMapV5();
 		} else {
-			alert('Prosze odblokowac wyskakujace okna dla tej strony');
-			btn.textContent = '{$changeLabel}';
+			openMapOld();
 		}
+		
+		if(btn) btn.textContent = '{$changeLabel}';
 	}
-	
-	// Obsluga wiadomosci z popup
-	window.addEventListener('message', function(e){
-		if(e.data && e.data.type === 'inpost_locker_selected'){
-			var text = e.data.locker;
-			
-			var valueEl = document.getElementById(widgetId + '_value');
-			var inputEl = document.getElementById(widgetId + '_input');
-			var btnEl = document.getElementById(widgetId + '_btn');
-			
-			if(valueEl) valueEl.textContent = text;
-			if(inputEl) inputEl.value = text;
-			if(btnEl) btnEl.textContent = '{$changeLabel}';
-			
-			// Zapisz przez AJAX
-			var xhr = new XMLHttpRequest();
-			xhr.open('POST', window.location.href, true);
-			xhr.setRequestHeader('Content-Type', 'application/x-www-form-urlencoded');
-			xhr.send('inpost_locker_save=' + encodeURIComponent(text));
-		}
-	});
 	
 	document.addEventListener('click', function(e){
 		var btn = document.getElementById(widgetId + '_btn');
@@ -1201,7 +1345,7 @@ class InpostHika extends \hikashopShippingPlugin
 
 	protected function loadGeoWidgetAssets()
 	{
-		// SDK jest teraz ładowane w osobnym oknie popup
+		// SDK jest teraz ładowane dynamicznie
 	}
 
 	protected function ensureOrderFieldExists()

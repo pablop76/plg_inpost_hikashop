@@ -42,18 +42,24 @@
         
         // Wyswietl mape
         easyPack.mapWidget('easypack-map', function(point) {
-            if (point && window.opener) {
+            if (point) {
                 var text = point.name;
                 if (point.address && point.address.line1) text += ' - ' + point.address.line1;
                 if (point.address && point.address.line2) text += ' - ' + point.address.line2;
                 
-                // Wyslij wybor do okna glownego
-                window.opener.postMessage({
-                    type: 'inpost_locker_selected',
-                    locker: text
-                }, '*');
-                
-                window.close();
+                // Wyslij wybor do okna glownego (iframe lub popup)
+                var target = window.parent !== window ? window.parent : window.opener;
+                if (target) {
+                    target.postMessage({
+                        type: 'inpost_locker_selected',
+                        locker: text
+                    }, '*');
+                    
+                    // Zamknij popup jesli to popup
+                    if (window.opener) {
+                        window.close();
+                    }
+                }
             }
         });
     </script>
