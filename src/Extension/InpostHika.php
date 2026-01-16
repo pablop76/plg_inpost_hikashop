@@ -1214,36 +1214,57 @@ class InpostHika extends \hikashopShippingPlugin
 		var btn = document.getElementById(widgetId + '_btn');
 		if(btn) btn.textContent = '{$loadingMsg}';
 		
+		// Zabezpieczenie przed wielokrotnym kliknięciem
+		if(window._inpostMapOpening) return;
+		window._inpostMapOpening = true;
+		
 		loadSDK(function(){
 			if(btn) btn.textContent = '{$changeLabel}';
 			
 			if(!window.easyPack || !window._inpostInitDone){
+				window._inpostMapOpening = false;
 				alert('Błąd ładowania mapy');
 				return;
 			}
 			
-			easyPack.modalMap(function(point, modal){
-				if(!point) return;
-				
-				var text = point.name;
-				if(point.address && point.address.line1) text += ' - ' + point.address.line1;
-				if(point.address && point.address.line2) text += ' - ' + point.address.line2;
-				
-				var valueEl = document.getElementById(widgetId + '_value');
-				var inputEl = document.getElementById(widgetId + '_input');
-				var btnEl = document.getElementById(widgetId + '_btn');
-				
-				if(valueEl) valueEl.textContent = text;
-				if(inputEl) inputEl.value = text;
-				if(btnEl) btnEl.textContent = '{$changeLabel}';
-				
-				var xhr = new XMLHttpRequest();
-				xhr.open('POST', window.location.href, true);
-				xhr.setRequestHeader('Content-Type', 'application/x-www-form-urlencoded');
-				xhr.send('inpost_locker_save=' + encodeURIComponent(text));
-				
-				if(modal && typeof modal.closeModal === 'function') modal.closeModal();
-			}, {width:1000, height:650});
+			// Usuń stare modalne kontenery mapy jeśli istnieją (zapobiega błędowi "already initialized")
+			var oldModals = document.querySelectorAll('.easypack-modal, .easypack-widget, [class*=\"easypack\"]');
+			oldModals.forEach(function(el){
+				if(el && el.parentNode) el.parentNode.removeChild(el);
+			});
+			
+			try {
+				easyPack.modalMap(function(point, modal){
+					window._inpostMapOpening = false;
+					if(!point) return;
+					
+					var text = point.name;
+					if(point.address && point.address.line1) text += ' - ' + point.address.line1;
+					if(point.address && point.address.line2) text += ' - ' + point.address.line2;
+					
+					var valueEl = document.getElementById(widgetId + '_value');
+					var inputEl = document.getElementById(widgetId + '_input');
+					var btnEl = document.getElementById(widgetId + '_btn');
+					
+					if(valueEl) valueEl.textContent = text;
+					if(inputEl) inputEl.value = text;
+					if(btnEl) btnEl.textContent = '{$changeLabel}';
+					
+					var xhr = new XMLHttpRequest();
+					xhr.open('POST', window.location.href, true);
+					xhr.setRequestHeader('Content-Type', 'application/x-www-form-urlencoded');
+					xhr.send('inpost_locker_save=' + encodeURIComponent(text));
+					
+					if(modal && typeof modal.closeModal === 'function') modal.closeModal();
+				}, {width:1000, height:650});
+			} catch(e) {
+				window._inpostMapOpening = false;
+				console.error('InPost map error:', e);
+				// Spróbuj zresetować SDK i otworzyć ponownie
+				window._inpostInitDone = false;
+				initEasyPack();
+				setTimeout(function(){ openMap(); }, 200);
+			}
 		});
 	}
 	
