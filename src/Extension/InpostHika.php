@@ -1232,53 +1232,54 @@ class InpostHika extends \hikashopShippingPlugin
 				return;
 			}
 			
-			// Zamknij istniejacy modal jesli jest otwarty
-			var existingModal = document.querySelector('.easypack-modal');
-			if(existingModal){
-				// Usun caly modal wraz z mapa Leaflet
-				var leafletContainer = existingModal.querySelector('.leaflet-container');
-				if(leafletContainer && leafletContainer._leaflet_id){
-					// Leaflet przechowuje instancje w globalnym obiekcie
-					delete leafletContainer._leaflet_id;
-				}
-				existingModal.remove();
+			// Jesli mapa byla juz otwierana, trzeba przeladowac strone
+			if(window._inpostMapWasOpened){
+				// Zapisz ze chcemy otworzyc mape po refreshu
+				sessionStorage.setItem('inpost_open_map', '1');
+				location.reload();
+				return;
 			}
 			
-			// Maly delay zeby DOM sie ustabilizował
-			setTimeout(function(){
-				try {
-					easyPack.modalMap(function(point, modal){
-						window._inpostMapOpening = false;
-						
-						if(!point){
-							return;
-						}
-						
-						var text = point.name;
-						if(point.address && point.address.line1) text += ' - ' + point.address.line1;
-						if(point.address && point.address.line2) text += ' - ' + point.address.line2;
-						
-						var valueEl = document.getElementById(widgetId + '_value');
-						var inputEl = document.getElementById(widgetId + '_input');
-						var btnEl = document.getElementById(widgetId + '_btn');
-						
-						if(valueEl) valueEl.textContent = text;
-						if(inputEl) inputEl.value = text;
-						if(btnEl) btnEl.textContent = '{$changeLabel}';
-						
-						var xhr = new XMLHttpRequest();
-						xhr.open('POST', window.location.href, true);
-						xhr.setRequestHeader('Content-Type', 'application/x-www-form-urlencoded');
-						xhr.send('inpost_locker_save=' + encodeURIComponent(text));
-						
-						if(modal && typeof modal.closeModal === 'function') modal.closeModal();
-					}, {width:1000, height:650});
-				} catch(e) {
+			window._inpostMapWasOpened = true;
+			
+			try {
+				easyPack.modalMap(function(point, modal){
 					window._inpostMapOpening = false;
-					console.error('InPost map error:', e);
-				}
-			}, 50);
+					
+					if(!point){
+						return;
+					}
+					
+					var text = point.name;
+					if(point.address && point.address.line1) text += ' - ' + point.address.line1;
+					if(point.address && point.address.line2) text += ' - ' + point.address.line2;
+					
+					var valueEl = document.getElementById(widgetId + '_value');
+					var inputEl = document.getElementById(widgetId + '_input');
+					var btnEl = document.getElementById(widgetId + '_btn');
+					
+					if(valueEl) valueEl.textContent = text;
+					if(inputEl) inputEl.value = text;
+					if(btnEl) btnEl.textContent = '{$changeLabel}';
+					
+					var xhr = new XMLHttpRequest();
+					xhr.open('POST', window.location.href, true);
+					xhr.setRequestHeader('Content-Type', 'application/x-www-form-urlencoded');
+					xhr.send('inpost_locker_save=' + encodeURIComponent(text));
+					
+					if(modal && typeof modal.closeModal === 'function') modal.closeModal();
+				}, {width:1000, height:650});
+			} catch(e) {
+				window._inpostMapOpening = false;
+				console.error('InPost map error:', e);
+			}
 		});
+	}
+	
+	// Sprawdz czy mamy otworzyc mape po refreshu
+	if(sessionStorage.getItem('inpost_open_map') === '1'){
+		sessionStorage.removeItem('inpost_open_map');
+		setTimeout(function(){ openMap(); }, 500);
 	}
 	
 	document.addEventListener('click', function(e){
