@@ -1227,7 +1227,7 @@ class InpostHika extends \hikashopShippingPlugin
 				return;
 			}
 			
-			// Usuń stare modalne kontenery mapy jeśli istnieją (zapobiega błędowi "already initialized")
+			// Usun stare modalne kontenery mapy jesli istnieja
 			var oldModals = document.querySelectorAll('.easypack-modal, .easypack-widget, [class*=\"easypack\"]');
 			oldModals.forEach(function(el){
 				if(el && el.parentNode) el.parentNode.removeChild(el);
