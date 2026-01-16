@@ -801,8 +801,9 @@ class InpostHika extends \hikashopShippingPlugin
 
 	public function getShippingDefaultValues(&$element)
 	{
-		$element->shipping_name = Text::_('PLG_HIKASHOPSHIPPING_INPOST_HIKA_NAME');
-		$element->shipping_description = '';
+		// Domyślna, pełna nazwa usługi i krótki opis czasu doręczenia
+		$element->shipping_name = 'InPost Paczkomaty 24/7';
+		$element->shipping_description = 'Dostawa 1-2 dni robocze; weekend możliwy zależnie od usługi.';
 		$element->shipping_type = $this->name;
 		$element->shipping_params = new \stdClass();
 		$element->shipping_params->enable_shipx = 0;
