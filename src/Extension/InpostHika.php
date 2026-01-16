@@ -1201,13 +1201,6 @@ class InpostHika extends \hikashopShippingPlugin
 		var btn = document.getElementById(widgetId + '_btn');
 		if(btn) btn.textContent = '{$loadingMsg}';
 		
-		// Jesli mapa byla juz otwarta, trzeba przeladowac strone
-		if(window._inpostMapWasOpened){
-			sessionStorage.setItem('inpost_open_map', '1');
-			location.reload();
-			return;
-		}
-		
 		// Zabezpieczenie przed wielokrotnym kliknięciem
 		if(window._inpostMapOpening) return;
 		window._inpostMapOpening = true;
@@ -1224,7 +1217,6 @@ class InpostHika extends \hikashopShippingPlugin
 			try {
 				easyPack.modalMap(function(point, modal){
 					window._inpostMapOpening = false;
-					window._inpostMapWasOpened = true;
 					
 					if(!point){
 						return;
@@ -1234,32 +1226,24 @@ class InpostHika extends \hikashopShippingPlugin
 					if(point.address && point.address.line1) text += ' - ' + point.address.line1;
 					if(point.address && point.address.line2) text += ' - ' + point.address.line2;
 					
-					var valueEl = document.getElementById(widgetId + '_value');
-					var inputEl = document.getElementById(widgetId + '_input');
-					var btnEl = document.getElementById(widgetId + '_btn');
+					// Zapisz wybor do sessionStorage i przeladuj strone
+					sessionStorage.setItem('inpost_selected_locker', text);
 					
-					if(valueEl) valueEl.textContent = text;
-					if(inputEl) inputEl.value = text;
-					if(btnEl) btnEl.textContent = '{$changeLabel}';
-					
+					// Wyslij AJAX i przeladuj
 					var xhr = new XMLHttpRequest();
 					xhr.open('POST', window.location.href, true);
 					xhr.setRequestHeader('Content-Type', 'application/x-www-form-urlencoded');
+					xhr.onload = function(){
+						location.reload();
+					};
 					xhr.send('inpost_locker_save=' + encodeURIComponent(text));
 					
-					if(modal && typeof modal.closeModal === 'function') modal.closeModal();
 				}, {width:1000, height:650});
 			} catch(e) {
 				window._inpostMapOpening = false;
 				console.error('InPost map error:', e);
 			}
 		});
-	}
-	
-	// Sprawdz czy otworzyc mape po refreshu
-	if(sessionStorage.getItem('inpost_open_map') === '1'){
-		sessionStorage.removeItem('inpost_open_map');
-		setTimeout(function(){ openMap(); }, 300);
 	}
 	
 	document.addEventListener('click', function(e){
