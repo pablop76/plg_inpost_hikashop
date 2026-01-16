@@ -1107,7 +1107,7 @@ class InpostHika extends \hikashopShippingPlugin
 	var defaultZoom = {$defaultZoom};
 	var pendingOpen = false;
 	
-	// Dodaj CSS od razu
+	// Dodaj CSS od razu (tylko raz)
 	if(!document.querySelector('link[href*=\"geowidget\"]')){
 		var link = document.createElement('link');
 		link.rel = 'stylesheet';
@@ -1115,37 +1115,72 @@ class InpostHika extends \hikashopShippingPlugin
 		document.head.appendChild(link);
 	}
 	
-	// Załaduj SDK
+	// Załaduj SDK (singleton - tylko raz na całą stronę)
 	function loadSDK(callback){
-		if(window._inpostSDKLoaded && window._inpostInitDone){
+		// Już załadowane i zainicjalizowane - od razu callback
+		if(window._inpostSDKLoaded && window._inpostInitDone && window.easyPack){
 			callback();
 			return;
 		}
 		
+		// W trakcie ładowania - dodaj do kolejki
 		if(window._inpostSDKLoading){
 			window._inpostCallbacks = window._inpostCallbacks || [];
 			window._inpostCallbacks.push(callback);
 			return;
 		}
 		
+		// Sprawdź czy skrypt już istnieje w DOM (AJAX refresh)
+		var existingScript = document.querySelector('script[src*=\"geowidget\"][src*=\"sdk-for-javascript\"]');
+		if(existingScript && window.easyPack){
+			// SDK już załadowane przez poprzedni AJAX
+			if(!window._inpostInitDone){
+				initEasyPack();
+			}
+			callback();
+			return;
+		}
+		
+		// Pierwsze ładowanie
 		window._inpostSDKLoading = true;
 		window._inpostCallbacks = [callback];
 		
-		var script = document.createElement('script');
-		script.src = SDK_JS;
-		script.onload = function(){
-			window._inpostSDKLoaded = true;
-			initEasyPack();
-			
-			var cbs = window._inpostCallbacks || [];
-			window._inpostCallbacks = [];
-			cbs.forEach(function(cb){ cb(); });
-		};
-		document.body.appendChild(script);
+		// Nie dodawaj skryptu jeśli już istnieje
+		if(!existingScript){
+			var script = document.createElement('script');
+			script.src = SDK_JS;
+			script.onload = function(){
+				window._inpostSDKLoaded = true;
+				initEasyPack();
+				
+				var cbs = window._inpostCallbacks || [];
+				window._inpostCallbacks = [];
+				cbs.forEach(function(cb){ cb(); });
+			};
+			script.onerror = function(){
+				window._inpostSDKLoading = false;
+				console.error('InPost SDK failed to load');
+			};
+			document.body.appendChild(script);
+		} else {
+			// Skrypt istnieje ale jeszcze się ładuje - czekaj
+			var checkInterval = setInterval(function(){
+				if(window.easyPack){
+					clearInterval(checkInterval);
+					window._inpostSDKLoaded = true;
+					initEasyPack();
+					var cbs = window._inpostCallbacks || [];
+					window._inpostCallbacks = [];
+					cbs.forEach(function(cb){ cb(); });
+				}
+			}, 100);
+		}
 	}
 	
 	function initEasyPack(){
-		if(!window.easyPack || window._inpostInitDone) return;
+		// Bezwzględnie tylko raz
+		if(window._inpostInitDone) return;
+		if(!window.easyPack) return;
 		window._inpostInitDone = true;
 		
 		var config = {
