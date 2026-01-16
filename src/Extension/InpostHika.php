@@ -1101,150 +1101,53 @@ class InpostHika extends \hikashopShippingPlugin
 	window._inpostWidgetInit['{$widgetId}'] = true;
 	
 	var widgetId = '{$widgetId}';
-	var SDK_JS = '{$sdkJs}';
-	var SDK_CSS = '{$sdkCss}';
 	var pointTypes = {$typesJs};
 	var mapType = '{$mapType}';
-	var searchType = '{$searchType}';
-	var googleApiKey = '{$googleApiKeyJs}';
 	var defaultLat = {$defaultLat};
 	var defaultLng = {$defaultLng};
 	var defaultZoom = {$defaultZoom};
-	var pendingOpen = false;
 	
-	// Dodaj CSS od razu (tylko raz)
-	if(!document.querySelector('link[href*=\"geowidget\"]')){
-		var link = document.createElement('link');
-		link.rel = 'stylesheet';
-		link.href = SDK_CSS;
-		document.head.appendChild(link);
-	}
-	
-	// Załaduj SDK (singleton - tylko raz)
-	function loadSDK(callback){
-		// W trakcie ładowania - dodaj do kolejki
-		if(window._inpostSDKLoading){
-			window._inpostCallbacks = window._inpostCallbacks || [];
-			window._inpostCallbacks.push(callback);
-			return;
-		}
-		
-		// Już załadowane - od razu callback
-		if(window._inpostSDKLoaded && window._inpostInitDone && window.easyPack){
-			callback();
-			return;
-		}
-		
-		// Sprawdz czy SDK juz jest w DOM
-		var existingScript = document.querySelector('script[src*=\"geowidget\"][src*=\"sdk-for-javascript\"]');
-		if(existingScript && window.easyPack){
-			if(!window._inpostInitDone) initEasyPack();
-			callback();
-			return;
-		}
-		
-		// Ładowanie
-		window._inpostSDKLoading = true;
-		window._inpostCallbacks = [callback];
-		
-		var script = document.createElement('script');
-		script.src = SDK_JS;
-		script.onload = function(){
-			window._inpostSDKLoaded = true;
-			window._inpostSDKLoading = false;
-			initEasyPack();
-			
-			var cbs = window._inpostCallbacks || [];
-			window._inpostCallbacks = [];
-			cbs.forEach(function(cb){ cb(); });
-		};
-		script.onerror = function(){
-			window._inpostSDKLoading = false;
-			console.error('InPost SDK failed to load');
-		};
-		document.body.appendChild(script);
-	}
-	
-	function initEasyPack(){
-		if(window._inpostInitDone) return;
-		if(!window.easyPack) return;
-		window._inpostInitDone = true;
-		
-		var config = {
-			defaultLocale: 'pl',
-			mapType: mapType,
-			searchType: searchType,
-			points: {
-				types: pointTypes,
-				functions: ['parcel_collect']
-			},
-			map: {
-				initialTypes: pointTypes,
-				useGeolocation: true,
-				initialZoom: defaultZoom,
-				typeFiltering: false,
-				filtersInColumn: false,
-				defaultLocation: [defaultLat, defaultLng]
-			},
-			filters: false,
-			closeToMeButton: true
-		};
-		
-		if(mapType === 'google' && googleApiKey) {
-			config.apiKey = googleApiKey;
-		}
-		
-		easyPack.init(config);
-	}
+	// URL do mapy w osobnym oknie
+	var mapUrl = '/plugins/hikashopshipping/inpost_hika/map.html';
 	
 	function openMap(){
 		var btn = document.getElementById(widgetId + '_btn');
 		if(btn) btn.textContent = '{$loadingMsg}';
 		
-		// Zabezpieczenie przed wielokrotnym kliknięciem
-		if(window._inpostMapOpening) return;
-		window._inpostMapOpening = true;
+		// Buduj URL z parametrami
+		var url = mapUrl + '?types=' + pointTypes.join(',') + '&mapType=' + mapType + '&lat=' + defaultLat + '&lng=' + defaultLng + '&zoom=' + defaultZoom;
 		
-		loadSDK(function(){
-			if(btn) btn.textContent = '{$changeLabel}';
-			
-			if(!window.easyPack || !window._inpostInitDone){
-				window._inpostMapOpening = false;
-				alert('Blad ladowania mapy');
-				return;
-			}
-			
-			try {
-				easyPack.modalMap(function(point, modal){
-					window._inpostMapOpening = false;
-					
-					if(!point){
-						return;
-					}
-					
-					var text = point.name;
-					if(point.address && point.address.line1) text += ' - ' + point.address.line1;
-					if(point.address && point.address.line2) text += ' - ' + point.address.line2;
-					
-					// Zapisz wybor do sessionStorage i przeladuj strone
-					sessionStorage.setItem('inpost_selected_locker', text);
-					
-					// Wyslij AJAX i przeladuj
-					var xhr = new XMLHttpRequest();
-					xhr.open('POST', window.location.href, true);
-					xhr.setRequestHeader('Content-Type', 'application/x-www-form-urlencoded');
-					xhr.onload = function(){
-						location.reload();
-					};
-					xhr.send('inpost_locker_save=' + encodeURIComponent(text));
-					
-				}, {width:1000, height:650});
-			} catch(e) {
-				window._inpostMapOpening = false;
-				console.error('InPost map error:', e);
-			}
-		});
+		// Otworz popup
+		var popup = window.open(url, 'inpost_map', 'width=1000,height=700,scrollbars=yes,resizable=yes');
+		
+		if(popup){
+			btn.textContent = '{$changeLabel}';
+		} else {
+			alert('Prosze odblokowac wyskakujace okna dla tej strony');
+			btn.textContent = '{$changeLabel}';
+		}
 	}
+	
+	// Obsluga wiadomosci z popup
+	window.addEventListener('message', function(e){
+		if(e.data && e.data.type === 'inpost_locker_selected'){
+			var text = e.data.locker;
+			
+			var valueEl = document.getElementById(widgetId + '_value');
+			var inputEl = document.getElementById(widgetId + '_input');
+			var btnEl = document.getElementById(widgetId + '_btn');
+			
+			if(valueEl) valueEl.textContent = text;
+			if(inputEl) inputEl.value = text;
+			if(btnEl) btnEl.textContent = '{$changeLabel}';
+			
+			// Zapisz przez AJAX
+			var xhr = new XMLHttpRequest();
+			xhr.open('POST', window.location.href, true);
+			xhr.setRequestHeader('Content-Type', 'application/x-www-form-urlencoded');
+			xhr.send('inpost_locker_save=' + encodeURIComponent(text));
+		}
+	});
 	
 	document.addEventListener('click', function(e){
 		var btn = document.getElementById(widgetId + '_btn');
@@ -1281,7 +1184,7 @@ class InpostHika extends \hikashopShippingPlugin
 			
 			if(!valid){
 				window._inpostShowingAlert = true;
-				alert('Proszę wybrać paczkomat lub punkt odbioru InPost');
+				alert('Prosze wybrac paczkomat lub punkt odbioru InPost');
 				setTimeout(function(){ window._inpostShowingAlert = false; }, 500);
 				
 				if(params && params.element){
@@ -1291,8 +1194,6 @@ class InpostHika extends \hikashopShippingPlugin
 			}
 		});
 	}
-	
-	// SDK ladowane tylko na klikniecie - nie preloadujemy
 })();
 ";
 		$doc->addScriptDeclaration($script);
@@ -1300,7 +1201,7 @@ class InpostHika extends \hikashopShippingPlugin
 
 	protected function loadGeoWidgetAssets()
 	{
-		// SDK jest teraz ładowane dynamicznie przy pierwszym kliknięciu przycisku
+		// SDK jest teraz ładowane w osobnym oknie popup
 	}
 
 	protected function ensureOrderFieldExists()
