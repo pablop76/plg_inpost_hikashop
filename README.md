@@ -126,9 +126,8 @@ Plugin wysyłkowy dla HikaShop (Joomla 4/5/6) integrujący InPost Paczkomaty z m
 
 ### Logika opłacania
 
-- Przesyłka tworzona dla **potwierdzonego** zamówienia → automatycznie opłacana
-- Przesyłka tworzona dla **niepotwierdzonego** zamówienia → wymaga ręcznego opłacenia
-- Etykieta PDF dostępna tylko dla **opłaconych** przesyłek
+- Przesyłka wymaga ręcznego utworzenia
+- Etykieta PDF dostępna tylko PO UTWORZENIU PRZESYŁKI
 
 ### Obsługiwane rozmiary paczek
 
@@ -191,50 +190,6 @@ plg_inpost_hika/
 │           └── InpostDisplay.php
 └── README.md
 ```
-
-## Changelog
-
-### v4.0.0 (2026-01-13)
-
-- **BREAKING**: Pełna kompatybilność z Joomla 5/6
-- Migracja do namespace `Pablop76\Plugin\HikashopShipping\InpostHika`
-- Dodano `services/provider.php` (Service Provider)
-- Zamieniono przestarzałe klasy JFactory, JText na nowe API Joomla
-- Struktura katalogów zgodna z Joomla 5/6 (`src/Extension/`)
-- Wymagane PHP 8.1+
-
-### v3.0.0 (2026-01-13)
-
-- **NOWOŚĆ**: Pełna integracja ShipX API
-- Tworzenie przesyłek InPost z panelu admina
-- Opłacanie przesyłek (automatyczne dla potwierdzonych zamówień)
-- Pobieranie etykiet PDF
-- Konfiguracja danych nadawcy
-- Wybór domyślnego rozmiaru paczki
-- Automatyczne łączenie z danymi odbiorcy z zamówienia
-- Obsługa środowiska Sandbox i Produkcji
-- Przyjazne komunikaty błędów (np. nieistniejący paczkomat)
-- Sekcja ShipX widoczna tylko w adminie (nie w emailach do klienta)
-
-### v2.1.0 (2026-01-13)
-
-- Dodano tryb API (Produkcja/Sandbox) - przygotowanie pod ShipX
-- Dodano tryb debug (logowanie do pliku)
-- Automatyczny zoom mapy zależny od typu (OSM:13, Google:6)
-- Poprawki tłumaczeń
-
-### v2.0.0 (2026-01-12)
-
-- Dodano wybór typu mapy (OSM/Google)
-- Dodano konfigurację domyślnej lokalizacji i zoom
-- Dodano konfigurację typów punktów (paczkomaty/POP)
-- Wyświetlanie paczkomatu w szczegółach zamówienia (admin)
-- Walidacja wyboru przed złożeniem zamówienia
-
-### v1.0.0
-
-- Pierwsza wersja z podstawową funkcjonalnością
-
 ## Licencja
 
 GNU/GPLv3 - http://www.gnu.org/licenses/gpl-3.0.html
