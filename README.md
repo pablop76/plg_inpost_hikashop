@@ -124,9 +124,9 @@ Plugin wysyłkowy dla HikaShop (Joomla 4/5/6) integrujący InPost Paczkomaty z m
 5. Jeśli zamówienie nie jest potwierdzone - kliknij **"Opłać przesyłkę"** gdy będzie gotowe
 6. Po opłaceniu pojawi się przycisk **"Pobierz etykietę"**
 
-### Logika opłacania
+### Logika tworzenia etykiet
 
-- Przesyłka wymaga ręcznego utworzenia
+- Przesyłka wymaga ręcznego utworzenia w zamówieniu Hikashop
 - Etykieta PDF dostępna tylko PO UTWORZENIU PRZESYŁKI
 
 ### Obsługiwane rozmiary paczek
