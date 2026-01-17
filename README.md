@@ -91,7 +91,7 @@ Plugin wysyłkowy dla HikaShop (Joomla 4/5/6) integrujący InPost Paczkomaty z m
 | Cecha                   | Stare API                    | Nowe API v5                        |
 | ----------------------- | ---------------------------- | ---------------------------------- |
 | Token                   | Nie wymaga                   | Wymaga (z Manager Paczek)          |
-| Localhost               | ✅ Działa                    | ❌ Wymaga zarejestrowanej domeny   |
+| Localhost               | ✅ Działa                    | ✅ Działa                          |
 | Konfiguracja punktów    | Paczkomaty + POP (checkboxy) | parcelCollect, parcelCollectPayment, parcelCollect247, parcelSend |
 
 4. Ustaw cenę wysyłki, strefę i inne standardowe opcje HikaShop
