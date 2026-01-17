@@ -25,11 +25,13 @@ Plugin wysyłkowy dla HikaShop (Joomla 4/5/6) integrujący InPost Paczkomaty z m
 - ✅ Wybór rozmiaru paczki (Mała A / Średnia B / Duża C)
 - ✅ Pobieranie etykiety PDF
 - ✅ Obsługa środowiska Sandbox (testowe) i Produkcji
+- ✅ **Opcja wymagania potwierdzenia zamówienia** przed utworzeniem przesyłki
 
 ### Inne
 
 - ✅ Wyświetlanie paczkomatu w panelu admina (szczegóły zamówienia)
 - ✅ Tryb debug (logowanie do pliku)
+- ✅ **Debug na zapleczu** (wyświetlanie odpowiedzi API w adminie)
 
 ## Wymagania
 
@@ -84,7 +86,9 @@ Plugin wysyłkowy dla HikaShop (Joomla 4/5/6) integrujący InPost Paczkomaty z m
 | Domyślny zoom           | Poziom przybliżenia (pusty = auto)                                | auto      |
 | Pokaż paczkomaty        | Włącz paczkomaty (stare API)                                      | Tak       |
 | Pokaż punkty POP        | Włącz punkty POP (stare API)                                      | Nie       |
-| Tryb debug              | Logowanie do pliku                                                | Nie       |
+| Tryb debug              | Logowanie do pliku `/logs/inpost_hika_debug.log`                  | Nie       |
+| Debug na zapleczu       | Wyświetlanie odpowiedzi API w panelu admina                       | Nie       |
+| Wymagaj potwierdzenia   | Tylko zamówienia `confirmed`/`shipped` mogą mieć przesyłki        | Tak       |
 
 #### Różnice między wersjami API
 
@@ -146,6 +150,9 @@ Plugin wysyłkowy dla HikaShop (Joomla 4/5/6) integrujący InPost Paczkomaty z m
 
 ## Tryb Debug
 
+Plugin obsługuje dwa rodzaje debugowania:
+
+### Debug do pliku
 Gdy włączony, plugin zapisuje logi do pliku:
 
 ```
@@ -153,6 +160,9 @@ Gdy włączony, plugin zapisuje logi do pliku:
 ```
 
 Logowane są: wybór paczkomatu, zapis do bazy, potwierdzenie zamówienia, wywołania API ShipX.
+
+### Debug na zapleczu
+Gdy włączony, wyświetla pełne odpowiedzi API bezpośrednio w panelu admina (przydatne do diagnozowania problemów).
 
 ## Baza danych
 
@@ -190,6 +200,56 @@ plg_inpost_hika/
 │           └── InpostDisplay.php
 └── README.md
 ```
+
+## Changelog
+
+### v4.1.0 (2026-01-17)
+
+- **NOWOŚĆ**: Opcja "Wymagaj potwierdzenia zamówienia" - ogranicza tworzenie przesyłek do statusów confirmed/shipped
+- **NOWOŚĆ**: Opcja "Debug na zapleczu" - wyświetlanie odpowiedzi API w panelu admina
+- Poprawki tłumaczeń polskich
+
+### v4.0.0 (2026-01-13)
+
+- **BREAKING**: Pełna kompatybilność z Joomla 5/6
+- Migracja do namespace `Pablop76\Plugin\HikashopShipping\InpostHika`
+- Dodano `services/provider.php` (Service Provider)
+- Zamieniono przestarzałe klasy JFactory, JText na nowe API Joomla
+- Struktura katalogów zgodna z Joomla 5/6 (`src/Extension/`)
+- Wymagane PHP 8.1+
+
+### v3.0.0 (2026-01-13)
+
+- **NOWOŚĆ**: Pełna integracja ShipX API
+- Tworzenie przesyłek InPost z panelu admina
+- Opłacanie przesyłek (automatyczne dla potwierdzonych zamówień)
+- Pobieranie etykiet PDF
+- Konfiguracja danych nadawcy
+- Wybór domyślnego rozmiaru paczki
+- Automatyczne łączenie z danymi odbiorcy z zamówienia
+- Obsługa środowiska Sandbox i Produkcji
+- Przyjazne komunikaty błędów (np. nieistniejący paczkomat)
+- Sekcja ShipX widoczna tylko w adminie (nie w emailach do klienta)
+
+### v2.1.0 (2026-01-13)
+
+- Dodano tryb API (Produkcja/Sandbox) - przygotowanie pod ShipX
+- Dodano tryb debug (logowanie do pliku)
+- Automatyczny zoom mapy zależny od typu (OSM:13, Google:6)
+- Poprawki tłumaczeń
+
+### v2.0.0 (2026-01-12)
+
+- Dodano wybór typu mapy (OSM/Google)
+- Dodano konfigurację domyślnej lokalizacji i zoom
+- Dodano konfigurację typów punktów (paczkomaty/POP)
+- Wyświetlanie paczkomatu w szczegółach zamówienia (admin)
+- Walidacja wyboru przed złożeniem zamówienia
+
+### v1.0.0
+
+- Pierwsza wersja z podstawową funkcjonalnością
+
 ## Licencja
 
 GNU/GPLv3 - http://www.gnu.org/licenses/gpl-3.0.html

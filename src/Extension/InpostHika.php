@@ -84,7 +84,10 @@ class InpostHika extends \hikashopShippingPlugin
 		'default_zoom' => array('PLG_HIKASHOPSHIPPING_INPOST_HIKA_DEFAULT_ZOOM', 'input', ''),
 		'show_parcel_lockers' => array('PLG_HIKASHOPSHIPPING_INPOST_HIKA_SHOW_LOCKERS', 'boolean', '1'),
 		'show_pops' => array('PLG_HIKASHOPSHIPPING_INPOST_HIKA_SHOW_POPS', 'boolean', '0'),
-		'debug' => array('PLG_HIKASHOPSHIPPING_INPOST_HIKA_DEBUG', 'boolean', '0')
+		'debug' => array('PLG_HIKASHOPSHIPPING_INPOST_HIKA_DEBUG', 'boolean', '0'),
+		'debug_admin' => array('PLG_HIKASHOPSHIPPING_INPOST_HIKA_DEBUG_ADMIN', 'boolean', '0'),
+		// Wymagaj potwierdzenia zamówienia przed utworzeniem przesyłki
+		'require_confirmed' => array('PLG_HIKASHOPSHIPPING_INPOST_HIKA_REQUIRE_CONFIRMED', 'boolean', '1'),
 	);
 
 	public function __construct(&$subject, $config)
@@ -170,15 +173,33 @@ class InpostHika extends \hikashopShippingPlugin
 		echo '<span style="color:#333; font-size:15px; font-weight:bold;">' . htmlspecialchars($locker) . '</span>';
 		echo '</div>';
 		
-		// Sekcja ShipX API - TYLKO DLA ADMINA i NIE dla emaili
-		if (!$isAdmin) {
-			return; // Email/klient widzi tylko paczkomat, nie widzi sekcji ShipX
-		}
+
+		   // Sekcja ShipX API - TYLKO DLA ADMINA i NIE dla emaili
+		   if (!$isAdmin) {
+			   return; // Email/klient widzi tylko paczkomat, nie widzi sekcji ShipX
+		   }
+
+
+
+		   // Sprawdź czy ShipX jest włączony
+		   $enableShipx = !empty($shippingParams->enable_shipx);
+		   if (!$enableShipx) {
+			   return; // ShipX wyłączony - nie pokazuj sekcji admin
+		   }
 		
-		// Sprawdź czy ShipX jest włączony
-		$enableShipx = !empty($shippingParams->enable_shipx);
-		if (!$enableShipx) {
-			return; // ShipX wyłączony - nie pokazuj sekcji admin
+		// Sprawdź status zamówienia HikaShop - tylko potwierdzone/opłacone mogą mieć tworzone przesyłki
+		$requireConfirmed = isset($shippingParams->require_confirmed) ? (bool)$shippingParams->require_confirmed : true;
+		if ($requireConfirmed) {
+			$orderStatus = $order->order_status ?? '';
+			$allowedStatuses = array('confirmed', 'shipped');
+			if (!in_array($orderStatus, $allowedStatuses)) {
+				echo '<div style="background:#fff3cd; border:2px solid #ffc107; padding:12px; margin:10px 0; border-radius:6px; color:#856404; font-size:14px;">';
+				echo '<strong>⚠️ Zamówienie nie jest potwierdzone</strong><br>';
+				echo 'Tworzenie przesyłki InPost jest możliwe tylko dla zamówień o statusie: <b>' . implode(', ', $allowedStatuses) . '</b>.<br>';
+				echo 'Aktualny status: <b>' . htmlspecialchars($orderStatus) . '</b>';
+				echo '</div>';
+				return;
+			}
 		}
 		
 		// Pobierz tylko kod paczkomatu (pierwszy element przed " - ")
@@ -477,10 +498,26 @@ class InpostHika extends \hikashopShippingPlugin
 			// Zawsze próbuj opłacić przesyłkę
 			$buyResult = $this->buyShipmentOffer($result->id, $shippingParams);
 			
+			// DEBUG: pokaż pełną odpowiedź API (tylko gdy debug_admin włączony)
+			if (!empty($shippingParams->debug_admin)) {
+				$app->enqueueMessage('DEBUG buyResult: ' . print_r($buyResult, true), 'notice');
+			}
+			
+			// Wyciągnij szczegółowy błąd z transactions jeśli istnieje
+			$transactionError = '';
+			if (isset($buyResult->transactions) && is_array($buyResult->transactions)) {
+				foreach ($buyResult->transactions as $tx) {
+					if (isset($tx->status) && $tx->status === 'failure' && isset($tx->details)) {
+						$transactionError = $tx->details->error ?? $tx->details->message ?? '';
+						break;
+					}
+				}
+			}
+			
 			if ($buyResult && isset($buyResult->status) && $buyResult->status === 'confirmed') {
 				$app->enqueueMessage('Przesyłka InPost utworzona i opłacona! ID: ' . $result->id, 'success');
 			} elseif ($buyResult && isset($buyResult->_no_offer)) {
-				// Brak środków - usuń ID przesyłki
+				// Brak oferty - pokaż szczegółowy błąd z API
 				$query = $db->getQuery(true)
 					->update($db->quoteName('#__hikashop_order'))
 					->set($db->quoteName('inpost_shipment_id') . ' = NULL')
@@ -488,7 +525,19 @@ class InpostHika extends \hikashopShippingPlugin
 				$db->setQuery($query);
 				$db->execute();
 				
-				$app->enqueueMessage('Nie można utworzyć przesyłki - brak środków na koncie InPost. Doładuj konto w Managerze Paczek i spróbuj ponownie.', 'error');
+				// Anuluj utworzoną przesyłkę
+				$this->cancelShipment($result->id, $shippingParams);
+				
+				// Komunikat w zależności od błędu
+				$errorMessage = 'Nie można opłacić przesyłki. ';
+				if ($transactionError === 'debt_collection') {
+					$errorMessage .= 'Powód: Brak środków na koncie InPost lub konto zablokowane (debt_collection). Doładuj konto w Managerze Paczek.';
+				} elseif ($transactionError) {
+					$errorMessage .= 'Powód z API: ' . $transactionError;
+				} else {
+					$errorMessage .= 'Możliwe przyczyny: brak środków, nieprawidłowy kod paczkomatu, oferta wygasła.';
+				}
+				$app->enqueueMessage($errorMessage, 'error');
 			} else {
 				$app->enqueueMessage('Przesyłka InPost utworzona! ID: ' . $result->id . ' (wymaga opłacenia w Managerze Paczek)', 'warning');
 			}
