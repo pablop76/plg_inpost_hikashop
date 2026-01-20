@@ -203,6 +203,13 @@ plg_inpost_hika/
 
 ## Changelog
 
+### v4.2.0 (2026-01-20)
+
+- **BUGFIX**: Naprawiono utratę wybranego paczkomatu podczas zmiany metody płatności w checkout
+  - Plugin teraz szuka danych paczkomatu w wielu źródłach (cart_params, order_shipping_params, session)
+  - Rozwiązuje problem, gdy zmiana płatności (np. PayU) powodowała odświeżenie strony i utratę sesji
+- Poprawiono metody `onShippingDisplay`, `onAfterOrderConfirm`, `onBeforeOrderCreate`
+
 ### v4.1.0 (2026-01-17)
 
 - **NOWOŚĆ**: Opcja "Wymagaj potwierdzenia zamówienia" - ogranicza tworzenie przesyłek do statusów confirmed/shipped

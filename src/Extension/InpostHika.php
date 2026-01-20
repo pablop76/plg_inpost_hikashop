@@ -845,7 +845,40 @@ class InpostHika extends \hikashopShippingPlugin
 		$this->ensureOrderFieldExists();
 		
 		$app = Factory::getApplication();
-		$selectedLocker = $app->getUserState('hikashop.inpost_locker', '');
+		
+		// Szukaj wybranego paczkomatu w wielu źródłach
+		$selectedLocker = '';
+		
+		// 1. Sprawdź cart_params->shipping (dane z custom_html zapisane przez HikaShop)
+		if (!empty($order->cart_params) && is_object($order->cart_params)) {
+			// HikaShop zapisuje custom data w cart_params->shipping->[warehouse_id]->custom->[shipping_id]
+			if (!empty($order->cart_params->shipping)) {
+				foreach ($order->cart_params->shipping as $warehouseData) {
+					if (is_object($warehouseData) && !empty($warehouseData->custom)) {
+						foreach ($warehouseData->custom as $customData) {
+							if (is_object($customData) && !empty($customData->{$this->orderFieldName})) {
+								$selectedLocker = $customData->{$this->orderFieldName};
+								break 2;
+							}
+						}
+					}
+				}
+			}
+			// Może być też bezpośrednio w cart_params->inpost_locker
+			if ($selectedLocker === '' && !empty($order->cart_params->inpost_locker)) {
+				$selectedLocker = $order->cart_params->inpost_locker;
+			}
+		}
+		
+		// 2. Fallback do user session
+		if ($selectedLocker === '') {
+			$selectedLocker = $app->getUserState('hikashop.inpost_locker', '');
+		}
+		
+		// Synchronizuj - jeśli mamy wartość, zapisz też do sesji
+		if ($selectedLocker !== '') {
+			$app->setUserState('hikashop.inpost_locker', $selectedLocker);
+		}
 		
 		$shippingDisplay = parent::onShippingDisplay($order, $dbrates, $usable_rates, $messages);
 		if (empty($usable_rates))
@@ -1000,7 +1033,58 @@ class InpostHika extends \hikashopShippingPlugin
 		}
 		
 		$app = Factory::getApplication();
-		$selected = $app->getUserState('hikashop.inpost_locker', '');
+		$db = Factory::getContainer()->get(DatabaseInterface::class);
+		
+		// Szukaj paczkomatu w wielu źródłach
+		$selected = '';
+		
+		// 1. Sprawdź order_shipping_params (może być już zapisany przez HikaShop)
+		if (!empty($order->order_shipping_params)) {
+			$shippingParams = $order->order_shipping_params;
+			if (is_string($shippingParams)) {
+				$shippingParams = @unserialize($shippingParams);
+			}
+			if (is_object($shippingParams) && !empty($shippingParams->inpost_locker)) {
+				$selected = $shippingParams->inpost_locker;
+			}
+		}
+		
+		// 2. Sprawdź cart_params z koszyka
+		if ($selected === '' && !empty($order->cart) && !empty($order->cart->cart_id)) {
+			$query = $db->getQuery(true)
+				->select($db->quoteName('cart_params'))
+				->from($db->quoteName('#__hikashop_cart'))
+				->where($db->quoteName('cart_id') . ' = ' . (int)$order->cart->cart_id);
+			$db->setQuery($query);
+			$cartParamsStr = $db->loadResult();
+			if (!empty($cartParamsStr)) {
+				$cartParams = @unserialize($cartParamsStr);
+				if (is_object($cartParams)) {
+					// Sprawdź bezpośrednio w cart_params
+					if (!empty($cartParams->inpost_locker)) {
+						$selected = $cartParams->inpost_locker;
+					}
+					// Sprawdź w shipping->custom
+					if ($selected === '' && !empty($cartParams->shipping)) {
+						foreach ($cartParams->shipping as $warehouseData) {
+							if (is_object($warehouseData) && !empty($warehouseData->custom)) {
+								foreach ($warehouseData->custom as $customData) {
+									if (is_object($customData) && !empty($customData->{$this->orderFieldName})) {
+										$selected = $customData->{$this->orderFieldName};
+										break 2;
+									}
+								}
+							}
+						}
+					}
+				}
+			}
+		}
+		
+		// 3. Fallback do user session
+		if ($selected === '') {
+			$selected = $app->getUserState('hikashop.inpost_locker', '');
+		}
 		
 		$this->debug('onAfterOrderConfirm', [
 			'order_id' => $order->order_id,
@@ -1058,9 +1142,45 @@ class InpostHika extends \hikashopShippingPlugin
 		
 		if ($shippingType !== $this->name) return;
 		
-		// Sprawdź czy punkt został wybrany
+		// Szukaj paczkomatu w wielu źródłach
 		$app = Factory::getApplication();
-		$selectedLocker = $app->getUserState('hikashop.inpost_locker', '');
+		$selectedLocker = '';
+		
+		// 1. Sprawdź cart_params z koszyka
+		if (!empty($order->cart) && !empty($order->cart->cart_id)) {
+			$query = $db->getQuery(true)
+				->select($db->quoteName('cart_params'))
+				->from($db->quoteName('#__hikashop_cart'))
+				->where($db->quoteName('cart_id') . ' = ' . (int)$order->cart->cart_id);
+			$db->setQuery($query);
+			$cartParamsStr = $db->loadResult();
+			if (!empty($cartParamsStr)) {
+				$cartParams = @unserialize($cartParamsStr);
+				if (is_object($cartParams)) {
+					if (!empty($cartParams->inpost_locker)) {
+						$selectedLocker = $cartParams->inpost_locker;
+					}
+					// Sprawdź w shipping->custom
+					if ($selectedLocker === '' && !empty($cartParams->shipping)) {
+						foreach ($cartParams->shipping as $warehouseData) {
+							if (is_object($warehouseData) && !empty($warehouseData->custom)) {
+								foreach ($warehouseData->custom as $customData) {
+									if (is_object($customData) && !empty($customData->{$this->orderFieldName})) {
+										$selectedLocker = $customData->{$this->orderFieldName};
+										break 2;
+									}
+								}
+							}
+						}
+					}
+				}
+			}
+		}
+		
+		// 2. Fallback do user session
+		if ($selectedLocker === '') {
+			$selectedLocker = $app->getUserState('hikashop.inpost_locker', '');
+		}
 		
 		// Walidacja - punkt musi być wybrany
 		if ($selectedLocker === '') {
