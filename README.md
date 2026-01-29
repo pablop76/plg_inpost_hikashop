@@ -190,14 +190,6 @@ plg_inpost_hika/
 │   └── pl-PL/
 │       ├── pl-PL.plg_hikashopshipping_inpost_hika.ini
 │       └── pl-PL.plg_hikashopshipping_inpost_hika.sys.ini
-├── plg_hikashop_inpost_display/  # Dodatkowy plugin (opcjonalny)
-│   ├── inpost_display.php
-│   ├── inpost_display.xml
-│   ├── services/
-│   │   └── provider.php
-│   └── src/
-│       └── Extension/
-│           └── InpostDisplay.php
 └── README.md
 ```
 
