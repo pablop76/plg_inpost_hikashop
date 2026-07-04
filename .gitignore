@@ -1,0 +1,11 @@
+# Lokalna notatka robocza dla Claude — nie publikować
+/CLAUDE.md
+
+# Logi
+*.log
+
+# OS / edytory
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
