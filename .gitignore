@@ -1,0 +1,5 @@
+# Lokalna notatka robocza dla Claude — nie publikować
+/CLAUDE.md
+
+# Paczka wydania — nie commitować do repo, tylko jako asset GitHub Release
+*.zip
