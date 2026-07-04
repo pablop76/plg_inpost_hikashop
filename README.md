@@ -188,6 +188,21 @@ plg_inpost_hika/
 
 ## Changelog
 
+### v4.2.5 (2026-07-04)
+
+- **BUGFIX (kluczowy)**: Naprawiono tworzenie WIELU przesyłek ShipX dla jednego zamówienia przy
+  powtarzanych próbach. Przyczyna: InPost przygotowuje oferty przewozowe **asynchronicznie** —
+  wtyczka sprawdzała je natychmiast po utworzeniu przesyłki, nie znajdowała, uznawała to za błąd
+  opłacenia, po czym **kasowała `inpost_shipment_id`** i (nieskutecznie) anulowała przesyłkę.
+  To rozbrajało zabezpieczenie przed duplikatami z v4.2.2 — kolejne kliknięcie tworzyło nową
+  przesyłkę. Zmiany:
+  - `buyShipmentOffer()` **odpytuje oferty z ponawianiem** (do 5 prób co 2 s) zanim uzna, że ich nie ma
+  - przy niegotowych ofertach / braku środków przesyłka **NIE jest już kasowana** — ID zostaje
+    zapisane, więc guard blokuje duplikaty, a użytkownik może dokończyć płatność
+  - dodano brakujący przycisk **„Opłać przesyłkę"** w panelu zamówienia (obok „Utwórz ponownie")
+    dla przesyłki utworzonej, ale jeszcze nieopłaconej (handler `buy_shipment` istniał, ale nie
+    był podpięty do żadnego przycisku)
+
 ### v4.2.4 (2026-07-04)
 
 - **BUGFIX**: Poprawka z v4.2.3 (`services/provider.php`) nie usuwała błędu `Class

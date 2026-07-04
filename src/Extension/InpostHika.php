@@ -1,7 +1,7 @@
 <?php
 /**
  * @package     HikaShop InPost Paczkomaty Shipping Plugin
- * @version     4.2.4
+ * @version     4.2.5
  * @copyright   (C) 2026
  * @license     GNU/GPLv3 http://www.gnu.org/licenses/gpl-3.0.html
  */
@@ -245,7 +245,19 @@ class InpostHika extends \hikashopShippingPlugin
 				echo '</button>';
 				echo '</form>';
 			} else {
-				// Przesyłka nieopłacona - pokaż przycisk ponownego utworzenia
+				// Przesyłka utworzona, ale jeszcze nieopłacona (oferty InPost przygotowują się
+				// asynchronicznie kilka sekund, albo brak środków). Pokaż DWA przyciski:
+				//  - "Opłać przesyłkę" (buy_shipment) - ponawia płatność na TEJ SAMEJ przesyłce,
+				//  - "Utwórz ponownie" (recreate_shipment) - anuluje starą i tworzy nową.
+				echo '<form method="post" style="display:inline-block; margin-top:10px; margin-right:10px;">';
+				echo '<input type="hidden" name="inpost_action" value="buy_shipment" />';
+				echo '<input type="hidden" name="order_id" value="' . (int)$order->order_id . '" />';
+				echo HTMLHelper::_('form.token');
+				echo '<button type="submit" class="btn btn-small btn-success" style="background:#28a745; color:#fff; padding:8px 15px; border-radius:4px; border:none; cursor:pointer;">';
+				echo '💳 Opłać przesyłkę';
+				echo '</button>';
+				echo '</form>';
+
 				echo '<form method="post" style="display:inline-block; margin-top:10px; margin-right:10px;">';
 				echo '<input type="hidden" name="inpost_action" value="recreate_shipment" />';
 				echo '<input type="hidden" name="order_id" value="' . (int)$order->order_id . '" />';
@@ -255,7 +267,9 @@ class InpostHika extends \hikashopShippingPlugin
 				echo '🔄 Utwórz ponownie';
 				echo '</button>';
 				echo '</form>';
-				echo '<small style="color:#856404; display:block; margin-top:5px;">Przesyłka nieopłacona - doładuj konto InPost i utwórz ponownie.</small>';
+				echo '<small style="color:#856404; display:block; margin-top:5px;">Przesyłka utworzona, ale nieopłacona. '
+					. 'Odczekaj kilka sekund (oferty się przygotowują) i kliknij „Opłać przesyłkę". '
+					. 'Jeśli to brak środków - doładuj konto InPost i opłać. „Utwórz ponownie" anuluje tę i tworzy nową.</small>';
 			}
 		} else {
 			// Sprawdź czy skonfigurowano API
@@ -334,7 +348,6 @@ class InpostHika extends \hikashopShippingPlugin
 	protected function handleBuyShipment($order, $shippingParams)
 	{
 		$app = Factory::getApplication();
-		$db = Factory::getContainer()->get(DatabaseInterface::class);
 
 		$shipmentId = $this->getShipmentIdForOrder($order->order_id);
 
@@ -358,18 +371,16 @@ class InpostHika extends \hikashopShippingPlugin
 		if ($buyResult && isset($buyResult->status) && $buyResult->status === 'confirmed') {
 			$app->enqueueMessage('Przesyłka InPost opłacona! ID: ' . $shipmentId, 'success');
 		} elseif ($buyResult && isset($buyResult->_no_offer)) {
-			// Brak dostępnej oferty - prawdopodobnie brak środków na koncie InPost lub oferta wygasła
-			$cancelOk = $this->cancelShipment($shipmentId, $shippingParams);
-			$query = $db->getQuery(true)
-				->update($db->quoteName('#__hikashop_order'))
-				->set($db->quoteName('inpost_shipment_id') . ' = NULL')
-				->where($db->quoteName('order_id') . ' = ' . (int)$order->order_id);
-			$db->setQuery($query);
-			$db->execute();
-
+			// Oferty jeszcze niegotowe albo brak środków. NIE kasujemy przesyłki - użytkownik
+			// może ponowić płatność tym samym przyciskiem gdy oferty będą gotowe / po doładowaniu.
+			// (Kasowanie ID + cancel tutaj prowadziło do tego samego problemu co w
+			//  handleCreateShipment: osierocone przesyłki + możliwość tworzenia duplikatów.)
 			$app->enqueueMessage(
-				'Nie można opłacić przesyłki. Sprawdź stan konta i weryfikację w Managerze Paczek InPost, a następnie spróbuj ponownie.',
-				'error'
+				'Nie udało się jeszcze opłacić przesyłki (ID: ' . $shipmentId . '). Oferty przewozowe '
+				. 'mogą przygotowywać się kilka sekund - odczekaj chwilę i kliknij "Opłać przesyłkę" ponownie. '
+				. 'Jeśli to brak środków - doładuj konto w Managerze Paczek. Aby utworzyć zupełnie nową '
+				. 'przesyłkę, użyj "Utwórz ponownie".',
+				'warning'
 			);
 		} elseif ($apiError || $httpCode) {
 			$app->enqueueMessage('Nie udało się opłacić przesyłki. ' . ($httpCode ? 'HTTP ' . $httpCode . ': ' : '') . ($apiError ?: 'Brak szczegółów błędu.') . ' Sprawdź w Managerze Paczek.', 'error');
@@ -532,27 +543,28 @@ class InpostHika extends \hikashopShippingPlugin
 			if ($buyResult && isset($buyResult->status) && $buyResult->status === 'confirmed') {
 				$app->enqueueMessage('Przesyłka InPost utworzona i opłacona! ID: ' . $result->id, 'success');
 			} elseif ($buyResult && isset($buyResult->_no_offer)) {
-				// Brak oferty - pokaż szczegółowy błąd z API
-				$query = $db->getQuery(true)
-					->update($db->quoteName('#__hikashop_order'))
-					->set($db->quoteName('inpost_shipment_id') . ' = NULL')
-					->where($db->quoteName('order_id') . ' = ' . (int)$order->order_id);
-				$db->setQuery($query);
-				$db->execute();
-				
-				// Anuluj utworzoną przesyłkę
-				$this->cancelShipment($result->id, $shippingParams);
-				
-				// Komunikat w zależności od błędu
-				$errorMessage = 'Nie można opłacić przesyłki. ';
+				// Oferty jeszcze nie są gotowe (InPost przygotowuje je asynchronicznie) albo
+				// brak środków na koncie. KLUCZOWE: NIE kasujemy przesyłki ani jej ID.
+				// Przesyłka (ID) zostaje zapisana w bazie (z linii wyżej) - dzięki temu:
+				//  - guard na starcie handleCreateShipment blokuje utworzenie DUPLIKATU
+				//    przy ponownym kliknięciu "Utwórz przesyłkę",
+				//  - użytkownik może dokończyć płatność przyciskiem "Opłać przesyłkę",
+				//    gdy oferty będą gotowe / po doładowaniu konta.
+				// (Wcześniej reset ID = NULL + cancel powodował, że w sandboxie, gdzie
+				//  przesyłka i tak potwierdza się async, powstawały osierocone przesyłki,
+				//  a rozbrojony guard pozwalał tworzyć kolejne przy każdej próbie.)
+				$errorMessage = 'Przesyłka utworzona (ID: ' . $result->id . '), ale nie udało się jej od razu opłacić. ';
 				if ($transactionError === 'debt_collection') {
-					$errorMessage .= 'Powód: Brak środków na koncie InPost lub konto zablokowane (debt_collection). Doładuj konto w Managerze Paczek.';
+					$errorMessage .= 'Powód: brak środków na koncie InPost lub konto zablokowane (debt_collection). '
+						. 'Doładuj konto w Managerze Paczek, a następnie kliknij "Opłać przesyłkę".';
 				} elseif ($transactionError) {
-					$errorMessage .= 'Powód z API: ' . $transactionError;
+					$errorMessage .= 'Powód z API: ' . $transactionError . '. Spróbuj "Opłać przesyłkę" za chwilę.';
 				} else {
-					$errorMessage .= 'Możliwe przyczyny: brak środków, nieprawidłowy kod paczkomatu, oferta wygasła.';
+					$errorMessage .= 'Najczęściej oferty przewozowe przygotowują się jeszcze kilka sekund - '
+						. 'odczekaj chwilę i kliknij "Opłać przesyłkę". NIE klikaj ponownie "Utwórz przesyłkę" '
+						. '(przesyłka już istnieje - powstałby duplikat). Jeśli chcesz utworzyć całkiem nową, użyj "Utwórz ponownie".';
 				}
-				$app->enqueueMessage($errorMessage, 'error');
+				$app->enqueueMessage($errorMessage, 'warning');
 			} else {
 				$app->enqueueMessage('Przesyłka InPost utworzona! ID: ' . $result->id . ' (wymaga opłacenia w Managerze Paczek)', 'warning');
 			}
@@ -624,41 +636,61 @@ class InpostHika extends \hikashopShippingPlugin
 	 */
 	protected function buyShipmentOffer($shipmentId, $shippingParams)
 	{
-		// Najpierw pobierz dane przesyłki (zawiera offers)
-		$shipment = $this->callShipXApi(
-			'GET',
-			'/v1/shipments/' . $shipmentId,
-			null,
-			$shippingParams
-		);
-		
-		$this->debug('Get shipment for buy', $shipment, $shippingParams);
-		
-		// Sprawdź czy przesyłka jest już opłacona (sandbox automatycznie opłaca)
-		if ($shipment && $shipment->status === 'confirmed') {
-			$this->debug('Shipment already confirmed (paid)', null, $shippingParams);
-			return $shipment;
-		}
-		
-		// Znajdź offer_id do kupienia
+		// InPost przygotowuje oferty przewozowe ASYNCHRONICZNIE - tuż po utworzeniu
+		// przesyłki oferty jeszcze nie istnieją (status 'created', puste 'offers').
+		// Odpytujemy przesyłkę kilka razy z krótką przerwą, zanim uznamy, że oferty
+		// faktycznie nie ma - inaczej wtyczka błędnie stwierdza "nie można opłacić"
+		// zaraz po utworzeniu, mimo że wystarczyło poczekać kilka sekund.
+		$shipment = null;
 		$offerId = null;
-		if ($shipment && !empty($shipment->offers)) {
-			foreach ($shipment->offers as $offer) {
-				if ($offer->status === 'available' || $offer->status === 'offer_selected') {
-					$offerId = $offer->id;
-					break;
+		$attempts = 5;
+
+		for ($i = 0; $i < $attempts; $i++) {
+			$shipment = $this->callShipXApi(
+				'GET',
+				'/v1/shipments/' . $shipmentId,
+				null,
+				$shippingParams
+			);
+
+			$this->debug('Get shipment for buy (próba ' . ($i + 1) . '/' . $attempts . ')', $shipment, $shippingParams);
+
+			// Sprawdź czy przesyłka jest już opłacona (sandbox automatycznie opłaca)
+			if ($shipment && isset($shipment->status) && $shipment->status === 'confirmed') {
+				$this->debug('Shipment already confirmed (paid)', null, $shippingParams);
+				return $shipment;
+			}
+
+			// Znajdź offer_id do kupienia
+			if ($shipment && !empty($shipment->offers)) {
+				foreach ($shipment->offers as $offer) {
+					if ($offer->status === 'available' || $offer->status === 'offer_selected') {
+						$offerId = $offer->id;
+						break;
+					}
 				}
 			}
-		}
-		
-		if (!$offerId) {
-			$this->debug('No available offer_id found', null, $shippingParams);
-			if (is_object($shipment)) {
-				$shipment->_no_offer = true;
+
+			if ($offerId) {
+				break;
 			}
+
+			// Oferty jeszcze się przygotowują - poczekaj i spróbuj ponownie
+			// (nie śpimy po ostatniej próbie)
+			if ($i < $attempts - 1) {
+				sleep(2);
+			}
+		}
+
+		if (!$offerId) {
+			$this->debug('No available offer_id found after polling', null, $shippingParams);
+			if (!is_object($shipment)) {
+				$shipment = new \stdClass();
+			}
+			$shipment->_no_offer = true;
 			return $shipment;
 		}
-		
+
 		// Kup z offer_id
 		$buyResult = $this->callShipXApi(
 			'POST',
@@ -666,7 +698,7 @@ class InpostHika extends \hikashopShippingPlugin
 			array('offer_id' => $offerId),
 			$shippingParams
 		);
-		
+
 		$this->debug('Buy shipment result', $buyResult, $shippingParams);
 		return $buyResult;
 	}
