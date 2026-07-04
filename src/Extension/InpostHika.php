@@ -1,7 +1,7 @@
 <?php
 /**
  * @package     HikaShop InPost Paczkomaty Shipping Plugin
- * @version     4.2.1
+ * @version     4.2.2
  * @copyright   (C) 2026
  * @license     GNU/GPLv3 http://www.gnu.org/licenses/gpl-3.0.html
  */
@@ -156,16 +156,10 @@ class InpostHika extends \hikashopShippingPlugin
 		
 		// Pobierz shipping_params dla konfiguracji ShipX
 		$shippingParams = $this->getShippingParamsForOrder($order);
-		
+
 		// Pobierz shipment_id z bazy (jeśli już utworzono przesyłkę)
-		$db = Factory::getContainer()->get(DatabaseInterface::class);
-		$query = $db->getQuery(true)
-			->select($db->quoteName('inpost_shipment_id'))
-			->from($db->quoteName('#__hikashop_order'))
-			->where($db->quoteName('order_id') . ' = ' . (int)$order->order_id);
-		$db->setQuery($query);
-		$shipmentId = $db->loadResult();
-		
+		$shipmentId = $this->getShipmentIdForOrder($order->order_id);
+
 		$label = Text::_('PLG_HIKASHOPSHIPPING_INPOST_HIKA_FIELD_LABEL');
 		
 		// Wyświetl HTML bezpośrednio (echo) - to jest wywoływane w trakcie renderowania
@@ -326,14 +320,9 @@ class InpostHika extends \hikashopShippingPlugin
 	{
 		$app = Factory::getApplication();
 		$db = Factory::getContainer()->get(DatabaseInterface::class);
-		
-		$query = $db->getQuery(true)
-			->select($db->quoteName('inpost_shipment_id'))
-			->from($db->quoteName('#__hikashop_order'))
-			->where($db->quoteName('order_id') . ' = ' . (int)$order->order_id);
-		$db->setQuery($query);
-		$shipmentId = $db->loadResult();
-		
+
+		$shipmentId = $this->getShipmentIdForOrder($order->order_id);
+
 		if (empty($shipmentId)) {
 			$app->enqueueMessage('Brak ID przesyłki do opłacenia', 'error');
 			return;
@@ -385,15 +374,10 @@ class InpostHika extends \hikashopShippingPlugin
 	{
 		$app = Factory::getApplication();
 		$db = Factory::getContainer()->get(DatabaseInterface::class);
-		
+
 		// Pobierz stare shipment_id
-		$query = $db->getQuery(true)
-			->select($db->quoteName('inpost_shipment_id'))
-			->from($db->quoteName('#__hikashop_order'))
-			->where($db->quoteName('order_id') . ' = ' . (int)$order->order_id);
-		$db->setQuery($query);
-		$oldShipmentId = $db->loadResult();
-		
+		$oldShipmentId = $this->getShipmentIdForOrder($order->order_id);
+
 		// Anuluj starą przesyłkę (best effort)
 		if (!empty($oldShipmentId)) {
 			$this->cancelShipment($oldShipmentId, $shippingParams);
@@ -420,7 +404,23 @@ class InpostHika extends \hikashopShippingPlugin
 	protected function handleCreateShipment($order, $lockerName, $shippingParams)
 	{
 		$app = Factory::getApplication();
-		
+
+		// Zabezpieczenie przed utworzeniem kilku przesyłek dla jednego zamówienia
+		// (np. podwójne kliknięcie przycisku albo ponowna próba po błędzie kodu paczkomatu
+		// - przycisk "Utwórz przesyłkę" jest widoczny tylko dopóki nie ma zapisanego
+		// inpost_shipment_id, ale dwa równoległe żądania mogły już zdążyć wystartować)
+		$existingShipmentId = $this->getShipmentIdForOrder($order->order_id);
+		if (!empty($existingShipmentId)) {
+			$app->enqueueMessage(
+				'Przesyłka dla tego zamówienia już istnieje (ID: ' . $existingShipmentId . '). '
+				. 'Odśwież stronę zamówienia - jeśli chcesz utworzyć nową, najpierw użyj "Utwórz ponownie".',
+				'warning'
+			);
+			$redirectUrl = 'index.php?option=com_hikashop&ctrl=order&task=edit&cid=' . (int)$order->order_id;
+			$app->redirect(Route::_($redirectUrl, false));
+			return;
+		}
+
 		// Pobierz dane odbiorcy z zamówienia
 		$db = Factory::getContainer()->get(DatabaseInterface::class);
 		$query = $db->getQuery(true)
@@ -676,14 +676,8 @@ class InpostHika extends \hikashopShippingPlugin
 	 */
 	protected function handleGetLabel($order, $shippingParams)
 	{
-		$db = Factory::getContainer()->get(DatabaseInterface::class);
-		$query = $db->getQuery(true)
-			->select($db->quoteName('inpost_shipment_id'))
-			->from($db->quoteName('#__hikashop_order'))
-			->where($db->quoteName('order_id') . ' = ' . (int)$order->order_id);
-		$db->setQuery($query);
-		$shipmentId = $db->loadResult();
-		
+		$shipmentId = $this->getShipmentIdForOrder($order->order_id);
+
 		if (empty($shipmentId)) {
 			Factory::getApplication()->enqueueMessage('Brak ID przesyłki', 'error');
 			return;
@@ -826,6 +820,20 @@ class InpostHika extends \hikashopShippingPlugin
 		return new \stdClass();
 	}
 	
+	/**
+	 * Pobiera ID przesyłki ShipX zapisane dla zamówienia (lub null, jeśli brak)
+	 */
+	protected function getShipmentIdForOrder($orderId)
+	{
+		$db = Factory::getContainer()->get(DatabaseInterface::class);
+		$query = $db->getQuery(true)
+			->select($db->quoteName('inpost_shipment_id'))
+			->from($db->quoteName('#__hikashop_order'))
+			->where($db->quoteName('order_id') . ' = ' . (int)$orderId);
+		$db->setQuery($query);
+		return $db->loadResult();
+	}
+
 	/**
 	 * Upewnia się że kolumna inpost_shipment_id istnieje
 	 */

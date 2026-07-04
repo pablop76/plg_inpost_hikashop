@@ -188,6 +188,15 @@ plg_inpost_hika/
 
 ## Changelog
 
+### v4.2.2 (2026-07-04)
+
+- **BUGFIX**: Zabezpieczono `handleCreateShipment()` przed utworzeniem kilku przesyłek ShipX
+  dla tego samego zamówienia (np. przy podwójnym kliknięciu przycisku "Utwórz przesyłkę" albo
+  ponownych próbach po błędzie "kod paczkomatu niepoprawny") — teraz sprawdza, czy zamówienie
+  nie ma już zapisanego `inpost_shipment_id`, zanim wywoła API
+- Scentralizowano odczyt `inpost_shipment_id` do wspólnej metody `getShipmentIdForOrder()`
+  (wcześniej to samo zapytanie SQL powielone w 4 miejscach)
+
 ### v4.2.1 (2026-07-04)
 
 - **BUGFIX**: Naprawiono ścieżkę do `map.html` (stare API GeoWidget) hardkodowaną od głównego
