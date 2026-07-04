@@ -188,6 +188,14 @@ plg_inpost_hika/
 
 ## Changelog
 
+### v4.2.3 (2026-07-04)
+
+- **BUGFIX**: Naprawiono błąd `Class "hikashopShippingPlugin" not found` pojawiający się w
+  niektórych kontekstach (np. podczas aktualizacji wtyczki w Menedżerze Rozszerzeń Joomla).
+  HikaShop rejestruje klasę bazową `hikashopShippingPlugin` leniwie (przy pierwszym załadowaniu
+  jego `helper.php`) — jeśli to jeszcze nie nastąpiło w danym żądaniu, `services/provider.php`
+  teraz dociąga ten plik ręcznie, zanim spróbuje utworzyć instancję wtyczki
+
 ### v4.2.2 (2026-07-04)
 
 - **BUGFIX**: Zabezpieczono `handleCreateShipment()` przed utworzeniem kilku przesyłek ShipX
