@@ -141,13 +141,6 @@ Plugin wysyłkowy dla HikaShop (Joomla 4/5/6) integrujący InPost Paczkomaty z m
 | Średnia (B) | 380 x 640 x 190 mm    | 25 kg    |
 | Duża (C)    | 410 x 380 x 640 mm    | 25 kg    |
 
-## Użycie Google Maps
-
-1. Uzyskaj klucz API z [Google Cloud Console](https://console.cloud.google.com/)
-2. Włącz Maps JavaScript API
-3. Wklej klucz w ustawieniach pluginu
-4. Zmień "Typ mapy" na "Google Maps"
-
 ## Tryb Debug
 
 Plugin obsługuje dwa rodzaje debugowania:
@@ -194,6 +187,22 @@ plg_inpost_hika/
 ```
 
 ## Changelog
+
+### v4.2.1 (2026-07-04)
+
+- **BUGFIX**: Naprawiono ścieżkę do `map.html` (stare API GeoWidget) hardkodowaną od głównego
+  katalogu domeny (`/plugins/...`) — łamała instalacje Joomla w podkatalogu. Teraz budowana
+  z `Uri::root()`
+- **BUGFIX**: Naprawiono ryzyko nadpisania `order_shipping_params` wartością `false` w
+  `onAfterOrderConfirm`, gdy dane nie były poprawnym zserializowanym obiektem
+- Dodano `map.html` do manifestu (`<files>`) — plik był wymagany w runtime, ale nie był
+  instalowany u użytkowników
+- Usunięto nieaktualną sekcję README o integracji Google Maps (funkcja nie istnieje od v4.0.0)
+  i martwe pola `map_type`/`google_api_key`
+- Refaktor: ujednolicono 3 zduplikowane bloki wyszukiwania wybranego paczkomatu do wspólnych
+  metod `findSelectedLocker()`/`extractLockerFromCartParams()`
+- Wzmocniono escapowanie wartości konfiguracyjnych wstrzykiwanych do inline `<script>` (JSON
+  zamiast `addslashes()`)
 
 ### v4.2.0 (2026-01-20)
 
