@@ -188,6 +188,14 @@ plg_inpost_hika/
 
 ## Changelog
 
+### v4.2.4 (2026-07-04)
+
+- **BUGFIX**: Poprawka z v4.2.3 (`services/provider.php`) nie usuwała błędu `Class
+  "hikashopShippingPlugin" not found` we wszystkich przypadkach — guard tam obejmował tylko
+  ścieżkę, w której to *nasz* kod tworzy instancję wtyczki. Guard przeniesiony do
+  `src/Extension/InpostHika.php`, tuż przed deklaracją klasy — działa niezależnie od tego, co
+  dokładnie wyzwala autoload tego pliku (nasz kod, Joomla, cokolwiek innego)
+
 ### v4.2.3 (2026-07-04)
 
 - **BUGFIX**: Naprawiono błąd `Class "hikashopShippingPlugin" not found` pojawiający się w

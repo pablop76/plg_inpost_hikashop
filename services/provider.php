@@ -1,7 +1,7 @@
 <?php
 /**
  * @package     HikaShop InPost Paczkomaty Shipping Plugin
- * @version     4.2.3
+ * @version     4.2.4
  * @copyright   (C) 2026
  * @license     GNU/GPLv3 http://www.gnu.org/licenses/gpl-3.0.html
  */
@@ -30,20 +30,6 @@ return new class implements ServiceProviderInterface
         $container->set(
             PluginInterface::class,
             function (Container $container) {
-                // HikaShop definiuje hikashopShippingPlugin leniwie: dopiero pierwsze
-                // załadowanie jego helper.php rejestruje spl_autoload_register dla tej
-                // klasy. W kontekstach, gdzie HikaShop jeszcze nie "wystartował" w tym
-                // requeście (np. podczas aktualizacji wtyczki w Menedżerze Rozszerzeń),
-                // ta klasa bazowa nie jest jeszcze dostępna - trzeba ją dociągnąć ręcznie,
-                // zanim autoloader Joomli spróbuje załadować InpostHika.php (który ją
-                // rozszerza), inaczej PHP zgłosi "Class hikashopShippingPlugin not found".
-                if (!class_exists('hikashopShippingPlugin', false)) {
-                    $helperPath = JPATH_ADMINISTRATOR . '/components/com_hikashop/helpers/helper.php';
-                    if (is_file($helperPath)) {
-                        require_once $helperPath;
-                    }
-                }
-
                 $dispatcher = $container->get(DispatcherInterface::class);
                 $config = (array) PluginHelper::getPlugin('hikashopshipping', 'inpost_hika');
 

@@ -1,7 +1,7 @@
 <?php
 /**
  * @package     HikaShop InPost Paczkomaty Shipping Plugin
- * @version     4.2.3
+ * @version     4.2.4
  * @copyright   (C) 2026
  * @license     GNU/GPLv3 http://www.gnu.org/licenses/gpl-3.0.html
  */
@@ -17,6 +17,21 @@ use Joomla\CMS\Session\Session;
 use Joomla\Database\DatabaseInterface;
 
 \defined('_JEXEC') or die('Restricted access');
+
+// HikaShop definiuje hikashopShippingPlugin leniwie: dopiero pierwsze załadowanie jego
+// helper.php rejestruje spl_autoload_register dla tej klasy. W kontekstach, gdzie HikaShop
+// jeszcze nie "wystartował" w danym żądaniu (np. podczas instalacji/aktualizacji tej wtyczki
+// w Menedżerze Rozszerzeń), ta klasa bazowa nie jest jeszcze dostępna. Ten guard musi być
+// w TYM pliku, przed deklaracją klasy - PHP odkłada kompilację "class X extends Y" do momentu
+// wykonania tej linii, więc wystarczy załadować helper.php wcześniej w tym samym pliku,
+// niezależnie od tego, co dokładnie wywołało autoload InpostHika (nasz services/provider.php,
+// czy jakikolwiek inny kod Joomli/HikaShop).
+if (!class_exists('hikashopShippingPlugin', false)) {
+	$inpostHikaHelperPath = JPATH_ADMINISTRATOR . '/components/com_hikashop/helpers/helper.php';
+	if (is_file($inpostHikaHelperPath)) {
+		require_once $inpostHikaHelperPath;
+	}
+}
 
 class InpostHika extends \hikashopShippingPlugin
 {
