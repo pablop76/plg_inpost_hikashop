@@ -1,7 +1,7 @@
 <?php
 /**
  * @package     HikaShop InPost Paczkomaty Shipping Plugin
- * @version     4.2.5
+ * @version     4.2.6
  * @copyright   (C) 2026
  * @license     GNU/GPLv3 http://www.gnu.org/licenses/gpl-3.0.html
  */
@@ -287,6 +287,23 @@ class InpostHika extends \hikashopShippingPlugin
 				} else {
 					echo '<input type="hidden" name="locker_name" value="' . htmlspecialchars($lockerCode) . '" />';
 				}
+
+				// Wybór rozmiaru paczki dla TEGO zamówienia (domyślnie wg konfiguracji wtyczki)
+				$defaultSize = $shippingParams->default_parcel_size ?? 'small';
+				$sizeOptions = array(
+					'small'  => Text::_('PLG_HIKASHOPSHIPPING_INPOST_HIKA_SIZE_SMALL'),
+					'medium' => Text::_('PLG_HIKASHOPSHIPPING_INPOST_HIKA_SIZE_MEDIUM'),
+					'large'  => Text::_('PLG_HIKASHOPSHIPPING_INPOST_HIKA_SIZE_LARGE'),
+				);
+				echo '<label style="display:inline-block; margin-right:5px; color:#333;">'
+					. Text::_('PLG_HIKASHOPSHIPPING_INPOST_HIKA_SELECT_PARCEL_SIZE') . ': </label>';
+				echo '<select name="parcel_size" style="padding:6px; margin-right:8px; border-radius:4px;">';
+				foreach ($sizeOptions as $sizeValue => $sizeLabel) {
+					$selected = ($sizeValue === $defaultSize) ? ' selected' : '';
+					echo '<option value="' . $sizeValue . '"' . $selected . '>' . htmlspecialchars($sizeLabel) . '</option>';
+				}
+				echo '</select>';
+
 				echo HTMLHelper::_('form.token');
 				echo '<button type="submit" class="btn btn-small btn-primary" style="background:#007bff; color:#fff; padding:8px 15px; border-radius:4px; border:none; cursor:pointer;">';
 				echo '📦 ' . Text::_('PLG_HIKASHOPSHIPPING_INPOST_HIKA_CREATE_SHIPMENT');
@@ -325,7 +342,8 @@ class InpostHika extends \hikashopShippingPlugin
 		switch ($action) {
 			case 'create_shipment':
 				$lockerName = $input->getString('locker_name', '');
-				$this->handleCreateShipment($order, $lockerName, $shippingParams);
+				$parcelSize = $input->getCmd('parcel_size', '');
+				$this->handleCreateShipment($order, $lockerName, $shippingParams, $parcelSize);
 				break;
 				
 			case 'recreate_shipment':
@@ -427,9 +445,19 @@ class InpostHika extends \hikashopShippingPlugin
 	/**
 	 * Tworzy przesyłkę w ShipX API
 	 */
-	protected function handleCreateShipment($order, $lockerName, $shippingParams)
+	protected function handleCreateShipment($order, $lockerName, $shippingParams, $parcelSize = '')
 	{
 		$app = Factory::getApplication();
+
+		// Rozmiar paczki: preferuj wybrany na tym zamówieniu (formularz), z fallbackiem
+		// do domyślnego z konfiguracji wtyczki. Waliduj wobec dozwolonych szablonów InPost.
+		$allowedSizes = array('small', 'medium', 'large');
+		if (!in_array($parcelSize, $allowedSizes, true)) {
+			$parcelSize = $shippingParams->default_parcel_size ?? 'small';
+		}
+		if (!in_array($parcelSize, $allowedSizes, true)) {
+			$parcelSize = 'small';
+		}
 
 		// Zabezpieczenie przed utworzeniem kilku przesyłek dla jednego zamówienia
 		// (np. podwójne kliknięcie przycisku albo ponowna próba po błędzie kodu paczkomatu
@@ -487,7 +515,7 @@ class InpostHika extends \hikashopShippingPlugin
 			),
 			'parcels' => array(
 				array(
-					'template' => $shippingParams->default_parcel_size ?? 'small'
+					'template' => $parcelSize
 				)
 			),
 			'service' => 'inpost_locker_standard',
@@ -540,8 +568,10 @@ class InpostHika extends \hikashopShippingPlugin
 				}
 			}
 			
+			$sizeLabel = Text::_('PLG_HIKASHOPSHIPPING_INPOST_HIKA_SIZE_' . strtoupper($parcelSize));
+
 			if ($buyResult && isset($buyResult->status) && $buyResult->status === 'confirmed') {
-				$app->enqueueMessage('Przesyłka InPost utworzona i opłacona! ID: ' . $result->id, 'success');
+				$app->enqueueMessage('Przesyłka InPost utworzona i opłacona! ID: ' . $result->id . ' (rozmiar: ' . $sizeLabel . ')', 'success');
 			} elseif ($buyResult && isset($buyResult->_no_offer)) {
 				// Oferty jeszcze nie są gotowe (InPost przygotowuje je asynchronicznie) albo
 				// brak środków na koncie. KLUCZOWE: NIE kasujemy przesyłki ani jej ID.
@@ -566,7 +596,7 @@ class InpostHika extends \hikashopShippingPlugin
 				}
 				$app->enqueueMessage($errorMessage, 'warning');
 			} else {
-				$app->enqueueMessage('Przesyłka InPost utworzona! ID: ' . $result->id . ' (wymaga opłacenia w Managerze Paczek)', 'warning');
+				$app->enqueueMessage('Przesyłka InPost utworzona! ID: ' . $result->id . ' (rozmiar: ' . $sizeLabel . ', wymaga opłacenia w Managerze Paczek)', 'warning');
 			}
 			
 			// Przekieruj z powrotem na stronę zamówienia

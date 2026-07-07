@@ -188,6 +188,14 @@ plg_inpost_hika/
 
 ## Changelog
 
+### v4.2.6 (2026-07-04)
+
+- **NOWOŚĆ**: Wybór rozmiaru paczki (Mała A / Średnia B / Duża C) **per zamówienie** przy tworzeniu
+  przesyłki w panelu admina. Wcześniej rozmiar był brany wyłącznie z globalnej konfiguracji
+  (`Domyślny rozmiar paczki`) i nie dało się go dobrać do konkretnego zamówienia. Selektor
+  domyślnie wskazuje rozmiar z konfiguracji, komunikat potwierdzający pokazuje użyty rozmiar.
+- Uzupełniono brakujące klucze językowe rozmiarów w pliku en-GB.
+
 ### v4.2.5 (2026-07-04)
 
 - **BUGFIX (kluczowy)**: Naprawiono tworzenie WIELU przesyłek ShipX dla jednego zamówienia przy
