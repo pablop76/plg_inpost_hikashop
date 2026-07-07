@@ -188,6 +188,16 @@ plg_inpost_hika/
 
 ## Changelog
 
+### v4.2.7 (2026-07-04)
+
+- **NOWOŚĆ**: Przycisk „Utwórz ponownie" jest teraz dostępny także dla **opłaconej** (potwierdzonej)
+  przesyłki — obok „Pobierz etykietę". Wcześniej dało się odtworzyć tylko przesyłkę nieopłaconą,
+  więc po potwierdzeniu nie było jak zmienić np. rozmiaru paczki czy paczkomatu bez ręcznego
+  grzebania w bazie. Przycisk ma potwierdzenie (JS `confirm`), bo anuluje istniejącą przesyłkę.
+- `handleRecreateShipment()` raportuje teraz, **czy** anulowanie w InPost faktycznie się powiodło —
+  jeśli InPost odmówił (przesyłka nadana/odebrana), pokazuje ostrzeżenie, żeby sprawdzić ją ręcznie
+  w Managerze Paczek (unikniesz podwójnej opłaty).
+
 ### v4.2.6 (2026-07-04)
 
 - **NOWOŚĆ**: Wybór rozmiaru paczki (Mała A / Średnia B / Duża C) **per zamówienie** przy tworzeniu

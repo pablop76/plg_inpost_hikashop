@@ -1,7 +1,7 @@
 <?php
 /**
  * @package     HikaShop InPost Paczkomaty Shipping Plugin
- * @version     4.2.6
+ * @version     4.2.7
  * @copyright   (C) 2026
  * @license     GNU/GPLv3 http://www.gnu.org/licenses/gpl-3.0.html
  */
@@ -235,8 +235,8 @@ class InpostHika extends \hikashopShippingPlugin
 			echo ' <span style="color:#666;">(status: ' . htmlspecialchars($shipmentStatus) . ')</span><br>';
 			
 			if ($isConfirmed) {
-				// Przesyłka opłacona - pokaż przycisk pobierania etykiety
-				echo '<form method="post" style="display:inline-block; margin-top:10px;">';
+				// Przesyłka opłacona - pobranie etykiety + możliwość anulowania i utworzenia nowej
+				echo '<form method="post" style="display:inline-block; margin-top:10px; margin-right:10px;">';
 				echo '<input type="hidden" name="inpost_action" value="get_label" />';
 				echo '<input type="hidden" name="order_id" value="' . (int)$order->order_id . '" />';
 				echo HTMLHelper::_('form.token');
@@ -244,6 +244,26 @@ class InpostHika extends \hikashopShippingPlugin
 				echo '📄 ' . Text::_('PLG_HIKASHOPSHIPPING_INPOST_HIKA_DOWNLOAD_LABEL');
 				echo '</button>';
 				echo '</form>';
+
+				// "Utwórz ponownie" także dla opłaconej przesyłki - anuluje obecną (best effort)
+				// i pozwala utworzyć nową (np. inny rozmiar/paczkomat). Z potwierdzeniem, bo to
+				// anuluje istniejącą, opłaconą przesyłkę. UWAGA: w produkcji nie da się anulować
+				// przesyłki już nadanej/odebranej przez kuriera - wtedy cancel po stronie InPost
+				// się nie powiedzie, ale lokalne ID i tak zostanie wyczyszczone.
+				$confirmMsg = addslashes('Ta przesyłka jest już opłacona. Utworzenie nowej najpierw '
+					. 'spróbuje anulować obecną (ID: ' . $shipmentId . ') w InPost. Kontynuować?');
+				echo '<form method="post" style="display:inline-block; margin-top:10px; margin-right:10px;" '
+					. 'onsubmit="return confirm(\'' . $confirmMsg . '\');">';
+				echo '<input type="hidden" name="inpost_action" value="recreate_shipment" />';
+				echo '<input type="hidden" name="order_id" value="' . (int)$order->order_id . '" />';
+				echo '<input type="hidden" name="locker_name" value="' . htmlspecialchars($lockerCode) . '" />';
+				echo HTMLHelper::_('form.token');
+				echo '<button type="submit" class="btn btn-small btn-warning" style="background:#ffc107; color:#333; padding:8px 15px; border-radius:4px; border:none; cursor:pointer;">';
+				echo '🔄 Utwórz ponownie';
+				echo '</button>';
+				echo '</form>';
+				echo '<small style="color:#856404; display:block; margin-top:5px;">„Utwórz ponownie" anuluje tę '
+					. 'przesyłkę (jeśli InPost pozwala) i pozwoli utworzyć nową, np. z innym rozmiarem paczki.</small>';
 			} else {
 				// Przesyłka utworzona, ale jeszcze nieopłacona (oferty InPost przygotowują się
 				// asynchronicznie kilka sekund, albo brak środków). Pokaż DWA przyciski:
@@ -422,20 +442,31 @@ class InpostHika extends \hikashopShippingPlugin
 		// Pobierz stare shipment_id
 		$oldShipmentId = $this->getShipmentIdForOrder($order->order_id);
 
-		// Anuluj starą przesyłkę (best effort)
+		// Anuluj starą przesyłkę (best effort - InPost może odmówić, jeśli już nadana/odebrana)
+		$cancelOk = false;
 		if (!empty($oldShipmentId)) {
-			$this->cancelShipment($oldShipmentId, $shippingParams);
+			$cancelOk = $this->cancelShipment($oldShipmentId, $shippingParams);
 		}
-		
-		// Wyczyść stare ID
+
+		// Wyczyść stare ID (niezależnie od wyniku anulowania - lokalnie pozwalamy utworzyć nową)
 		$query = $db->getQuery(true)
 			->update($db->quoteName('#__hikashop_order'))
 			->set($db->quoteName('inpost_shipment_id') . ' = NULL')
 			->where($db->quoteName('order_id') . ' = ' . (int)$order->order_id);
 		$db->setQuery($query);
 		$db->execute();
-		
-		$app->enqueueMessage('Stara przesyłka została usunięta. Możesz utworzyć nową.', 'message');
+
+		if (empty($oldShipmentId)) {
+			$app->enqueueMessage('Możesz utworzyć nową przesyłkę.', 'message');
+		} elseif ($cancelOk) {
+			$app->enqueueMessage('Stara przesyłka (ID: ' . $oldShipmentId . ') została anulowana w InPost. '
+				. 'Możesz utworzyć nową.', 'message');
+		} else {
+			$app->enqueueMessage('Odpięto starą przesyłkę (ID: ' . $oldShipmentId . ') od zamówienia, ale InPost '
+				. 'NIE potwierdził jej anulowania (mogła być już nadana/odebrana albo opłacona). Sprawdź ją w '
+				. 'Managerze Paczek i w razie potrzeby anuluj ręcznie, żeby nie zapłacić dwa razy. Możesz utworzyć nową.',
+				'warning');
+		}
 		
 		// Przekieruj z powrotem na stronę zamówienia
 		$redirectUrl = 'index.php?option=com_hikashop&ctrl=order&task=edit&cid=' . (int)$order->order_id;
