@@ -188,6 +188,16 @@ plg_inpost_hika/
 
 ## Changelog
 
+### v4.2.11 (2026-07-08)
+
+- **NOWOŚĆ (diagnostyka)**: W panelu zamówienia dla utworzonej przesyłki dodano rozwijaną sekcję
+  **„Pełna odpowiedź API ShipX (JSON)"** — surowy, kompletny rekord przesyłki prosto z
+  `GET /v1/shipments/{id}` (status, numer nadania, organizacja, usługa, daty). To autorytatywne
+  źródło prawdy o stanie przesyłki, niezależne od Managera Paczek. Przydatne zwłaszcza w sandboxie,
+  gdzie API i `sandbox-manager.paczkomaty.pl` bywają niezsynchronizowane — przesyłka realnie
+  istnieje w API (numer nadania + opłacenie), mimo że panel jej nie pokazuje. To ograniczenie
+  środowiska testowego InPost, nie wtyczki; na produkcji przesyłki są widoczne w Managerze normalnie.
+
 ### v4.2.10 (2026-07-08)
 
 - **NOWOŚĆ (diagnostyka)**: W panelu zamówienia dla utworzonej przesyłki pokazywany jest teraz

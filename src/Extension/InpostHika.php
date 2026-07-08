@@ -1,7 +1,7 @@
 <?php
 /**
  * @package     HikaShop InPost Paczkomaty Shipping Plugin
- * @version     4.2.10
+ * @version     4.2.11
  * @copyright   (C) 2026
  * @license     GNU/GPLv3 http://www.gnu.org/licenses/gpl-3.0.html
  */
@@ -252,6 +252,20 @@ class InpostHika extends \hikashopShippingPlugin
 			if (!empty($shipmentOrgId)) {
 				echo '<small style="color:#666;">ID organizacji przesyłki: ' . htmlspecialchars($shipmentOrgId)
 					. ' — musi się zgadzać z kontem, na które logujesz się w Managerze Paczek.</small><br>';
+			}
+
+			// Pełna, surowa odpowiedź API ShipX — ostateczne, autorytatywne źródło prawdy o przesyłce.
+			// W sandboxie Manager Paczek bywa niezsynchronizowany z API; ten dump pokazuje realny stan
+			// przesyłki (status, tracking, organizacja, usługa, daty) bez oglądania się na panel.
+			$rawJson = json_encode($shipmentInfo, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+			if ($rawJson !== false) {
+				echo '<details style="margin-top:8px;">';
+				echo '<summary style="cursor:pointer; color:#1565c0; font-weight:bold;">'
+					. '🔎 Pełna odpowiedź API ShipX (dowód, że przesyłka istnieje)</summary>';
+				echo '<pre style="background:#f5f5f5; border:1px solid #ccc; border-radius:4px; padding:10px; '
+					. 'margin-top:6px; max-height:400px; overflow:auto; font-size:12px; white-space:pre-wrap; '
+					. 'word-break:break-word; color:#222;">' . htmlspecialchars($rawJson) . '</pre>';
+				echo '</details>';
 			}
 
 			// Przesyłka istnieje - zawsze pokazujemy "Pobierz etykietę" + "Utwórz ponownie".
