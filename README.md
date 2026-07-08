@@ -188,6 +188,18 @@ plg_inpost_hika/
 
 ## Changelog
 
+### v4.2.12 (2026-07-08)
+
+- **NOWOŚĆ**: **Format etykiety** jako opcja konfiguracji (`label_type`): **Normalna A4**
+  (drukarka laserowa/atramentowa, domyślne) lub **A6** (drukarka termiczna/etykietowa).
+  Wcześniej na sztywno A4. Zgodne z oficjalnym modułem InPost (`type=normal|A6`).
+- **NOWOŚĆ (UX)**: **Czytelne polskie nazwy statusów** w panelu zamówienia obok technicznej
+  wartości (np. `confirmed — Przygotowana do nadania`). Dla statusów „nienadanych"
+  (`created`/`offers_prepared`/`offer_selected`/`confirmed`) pokazywana jest podpowiedź, że to
+  normalny etap, a przesyłki szukać w Managerze Paczek w widoku **„Opłacone → Do nadania"**
+  (nie „Wysłane") oraz sprawdzić filtr **„Data utworzenia"** (musi obejmować dzisiejszą datę)
+  i kierunek **„Wychodzące"**. To najczęstsze źródło mylnego „nie widzę przesyłki".
+
 ### v4.2.11 (2026-07-08)
 
 - **NOWOŚĆ (diagnostyka)**: W panelu zamówienia dla utworzonej przesyłki dodano rozwijaną sekcję

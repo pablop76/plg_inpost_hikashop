@@ -1,7 +1,7 @@
 <?php
 /**
  * @package     HikaShop InPost Paczkomaty Shipping Plugin
- * @version     4.2.11
+ * @version     4.2.12
  * @copyright   (C) 2026
  * @license     GNU/GPLv3 http://www.gnu.org/licenses/gpl-3.0.html
  */
@@ -81,6 +81,11 @@ class InpostHika extends \hikashopShippingPlugin
 			'small' => 'PLG_HIKASHOPSHIPPING_INPOST_HIKA_SIZE_SMALL',
 			'medium' => 'PLG_HIKASHOPSHIPPING_INPOST_HIKA_SIZE_MEDIUM',
 			'large' => 'PLG_HIKASHOPSHIPPING_INPOST_HIKA_SIZE_LARGE'
+		)),
+		// Format etykiety: normal (A4, drukarka laserowa/atramentowa) lub A6 (drukarka termiczna/etykietowa)
+		'label_type' => array('PLG_HIKASHOPSHIPPING_INPOST_HIKA_LABEL_TYPE', 'list', array(
+			'normal' => 'PLG_HIKASHOPSHIPPING_INPOST_HIKA_LABEL_TYPE_NORMAL',
+			'A6' => 'PLG_HIKASHOPSHIPPING_INPOST_HIKA_LABEL_TYPE_A6'
 		)),
 		// Sposób nadania paczki (ShipX custom_attributes.sending_method)
 		'sending_method' => array('PLG_HIKASHOPSHIPPING_INPOST_HIKA_SENDING_METHOD', 'list', array(
@@ -241,8 +246,22 @@ class InpostHika extends \hikashopShippingPlugin
 			// organization_id z odpowiedzi - do weryfikacji czy patrzysz na właściwe konto w Managerze
 			$shipmentOrgId = $shipmentInfo->organization_id ?? null;
 
+			// Czytelna nazwa statusu obok technicznej (np. "confirmed — Przygotowana do nadania").
+			$statusHuman = $this->translateShipmentStatus($shipmentStatus);
+			$statusSuffix = ($statusHuman !== $shipmentStatus) ? ' — ' . $statusHuman : '';
 			echo '<span style="color:#28a745; font-weight:bold;">✅ ' . Text::_('PLG_HIKASHOPSHIPPING_INPOST_HIKA_SHIPMENT_CREATED') . ': ' . htmlspecialchars($shipmentId) . '</span>';
-			echo ' <span style="color:#666;">(status: ' . htmlspecialchars($shipmentStatus) . ')</span><br>';
+			echo ' <span style="color:#666;">(status: ' . htmlspecialchars($shipmentStatus) . htmlspecialchars($statusSuffix) . ')</span><br>';
+			// Podpowiedź dla statusów "nienadanych" wg definicji InPost — żeby nie mylić z błędem.
+			// To najczęstsze źródło paniki "nie widzę przesyłki w Managerze".
+			$notSentStatuses = array('created', 'offers_prepared', 'offer_selected', 'confirmed');
+			if (in_array($shipmentStatus, $notSentStatuses, true)) {
+				echo '<div style="background:#eef6ff; border-left:3px solid #2196f3; padding:8px 12px; margin:6px 0; color:#0d47a1; font-size:12.5px;">';
+				echo 'ℹ️ <b>To normalny etap</b>, nie błąd. Przesyłka jest przygotowana, ale <b>jeszcze nienadana fizycznie</b>. '
+					. 'W Managerze Paczek znajdziesz ją w widoku <b>„Opłacone → Do nadania"</b> (nie w „Wysłane"). '
+					. 'Jeśli jej nie widać — sprawdź filtr <b>„Data utworzenia"</b> (musi obejmować dzisiejszą datę) '
+					. 'i kierunek <b>„Wychodzące"</b>.';
+				echo '</div>';
+			}
 			if (!empty($trackingNumber)) {
 				echo '<span style="color:#1565c0;">📮 Numer nadania: <strong>' . htmlspecialchars($trackingNumber)
 					. '</strong></span> <small style="color:#666;">(po tym numerze szukaj w Managerze Paczek)</small><br>';
@@ -667,11 +686,12 @@ class InpostHika extends \hikashopShippingPlugin
 		
 		$this->debug('Getting label for shipment', ['shipment_id' => $shipmentId], $shippingParams);
 		
-		// Pobierz etykietę jako PDF.
-		// format=Pdf, type=normal (A4) — zgodnie z oficjalną wtyczką InPost (type=A6 = mniejsza etykieta).
+		// Pobierz etykietę jako PDF. format=Pdf; type z konfiguracji:
+		// normal = A4 (drukarka laserowa/atramentowa), A6 = mała etykieta (drukarka termiczna).
+		$labelType = (($shippingParams->label_type ?? 'normal') === 'A6') ? 'A6' : 'normal';
 		$labelData = $this->callShipXApi(
 			'GET',
-			'/v1/shipments/' . $shipmentId . '/label?format=Pdf&type=normal',
+			'/v1/shipments/' . $shipmentId . '/label?format=Pdf&type=' . $labelType,
 			null,
 			$shippingParams,
 			true // raw response (PDF)
@@ -704,6 +724,44 @@ class InpostHika extends \hikashopShippingPlugin
 		}
 	}
 	
+	/**
+	 * Tłumaczy techniczny status ShipX na czytelną polską nazwę.
+	 * Nazwy statusów wg oficjalnego modułu InPost (ShipX). Dla nieznanego statusu
+	 * zwraca surową wartość, żeby nic nie ukrywać.
+	 */
+	protected function translateShipmentStatus($status)
+	{
+		$status = (string) $status;
+		$map = array(
+			'created'                  => 'PLG_HIKASHOPSHIPPING_INPOST_HIKA_ST_CREATED',
+			'offers_prepared'          => 'PLG_HIKASHOPSHIPPING_INPOST_HIKA_ST_OFFERS_PREPARED',
+			'offer_selected'           => 'PLG_HIKASHOPSHIPPING_INPOST_HIKA_ST_OFFER_SELECTED',
+			'confirmed'                => 'PLG_HIKASHOPSHIPPING_INPOST_HIKA_ST_CONFIRMED',
+			'dispatched_by_sender'     => 'PLG_HIKASHOPSHIPPING_INPOST_HIKA_ST_DISPATCHED_BY_SENDER',
+			'collected_from_sender'    => 'PLG_HIKASHOPSHIPPING_INPOST_HIKA_ST_COLLECTED_FROM_SENDER',
+			'taken_by_courier'         => 'PLG_HIKASHOPSHIPPING_INPOST_HIKA_ST_TAKEN_BY_COURIER',
+			'adopted_at_source_branch' => 'PLG_HIKASHOPSHIPPING_INPOST_HIKA_ST_ADOPTED_SOURCE',
+			'sent_from_source_branch'  => 'PLG_HIKASHOPSHIPPING_INPOST_HIKA_ST_SENT_FROM_SOURCE',
+			'out_for_delivery'         => 'PLG_HIKASHOPSHIPPING_INPOST_HIKA_ST_OUT_FOR_DELIVERY',
+			'ready_to_pickup'          => 'PLG_HIKASHOPSHIPPING_INPOST_HIKA_ST_READY_TO_PICKUP',
+			'delivered'                => 'PLG_HIKASHOPSHIPPING_INPOST_HIKA_ST_DELIVERED',
+			'returned_to_sender'       => 'PLG_HIKASHOPSHIPPING_INPOST_HIKA_ST_RETURNED',
+			'avizo'                    => 'PLG_HIKASHOPSHIPPING_INPOST_HIKA_ST_AVIZO',
+			'canceled'                 => 'PLG_HIKASHOPSHIPPING_INPOST_HIKA_ST_CANCELED',
+			'cancelled'                => 'PLG_HIKASHOPSHIPPING_INPOST_HIKA_ST_CANCELED',
+			'not_found'                => 'PLG_HIKASHOPSHIPPING_INPOST_HIKA_ST_NOT_FOUND',
+			'unknown'                  => 'PLG_HIKASHOPSHIPPING_INPOST_HIKA_ST_UNKNOWN',
+		);
+		if (isset($map[$status])) {
+			$translated = Text::_($map[$status]);
+			// Text::_ zwraca sam klucz, gdy brak tłumaczenia — wtedy pokaż surowy status.
+			if (strcasecmp($translated, $map[$status]) !== 0) {
+				return $translated;
+			}
+		}
+		return $status;
+	}
+
 	/**
 	 * Wywołuje ShipX API
 	 */
