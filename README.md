@@ -188,6 +188,15 @@ plg_inpost_hika/
 
 ## Changelog
 
+### v4.2.8 (2026-07-04)
+
+- **BUGFIX (anulowanie przesyłki)**: Poprawiono endpoint anulowania na `DELETE /v1/shipments/{id}`
+  (zgodnie z oficjalną wtyczką InPost dla WooCommerce). Wcześniej wtyczka wołała nieistniejący
+  `POST /v1/shipments/{id}/cancel` — anulowanie **nigdy** się nie udawało, co przyczyniało się do
+  osieroconych przesyłek. Dodano obsługę metod `DELETE`/`PUT` w kliencie HTTP (`callShipXApi`).
+  Uwaga: InPost i tak nie pozwala anulować przesyłki o statusie `confirmed` (reguła biznesowa).
+- Pobieranie etykiety: `format=Pdf` (wcześniej `pdf`) — zgodnie z oficjalną wtyczką.
+
 ### v4.2.7 (2026-07-04)
 
 - **NOWOŚĆ**: Przycisk „Utwórz ponownie" jest teraz dostępny także dla **opłaconej** (potwierdzonej)

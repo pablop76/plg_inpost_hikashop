@@ -1,7 +1,7 @@
 <?php
 /**
  * @package     HikaShop InPost Paczkomaty Shipping Plugin
- * @version     4.2.7
+ * @version     4.2.8
  * @copyright   (C) 2026
  * @license     GNU/GPLv3 http://www.gnu.org/licenses/gpl-3.0.html
  */

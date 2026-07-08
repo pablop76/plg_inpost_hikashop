@@ -1,7 +1,7 @@
 <?php
 /**
  * @package     HikaShop InPost Paczkomaty Shipping Plugin
- * @version     4.2.7
+ * @version     4.2.8
  * @copyright   (C) 2026
  * @license     GNU/GPLv3 http://www.gnu.org/licenses/gpl-3.0.html
  */
@@ -765,18 +765,36 @@ class InpostHika extends \hikashopShippingPlugin
 	}
 
 	/**
-	 * Anuluje istniejącą przesyłkę w ShipX (best effort)
+	 * Anuluje istniejącą przesyłkę w ShipX (best effort).
+	 *
+	 * WAŻNE: właściwy endpoint to DELETE /v1/shipments/{id} (potwierdzone z oficjalną
+	 * wtyczką InPost dla WooCommerce). Wcześniej wtyczka wołała POST /v1/shipments/{id}/cancel
+	 * (endpoint nieistniejący) — anulowanie NIGDY się nie udawało, stąd osierocone przesyłki.
+	 * InPost i tak odmawia anulowania przesyłki o statusie `confirmed` (błąd
+	 * "Action (cancel) can not be taken on shipment with status (confirmed)") — to reguła
+	 * biznesowa, nie da się jej obejść.
 	 */
 	protected function cancelShipment($shipmentId, $shippingParams)
 	{
 		$result = $this->callShipXApi(
-			'POST',
-			'/v1/shipments/' . $shipmentId . '/cancel',
+			'DELETE',
+			'/v1/shipments/' . $shipmentId,
 			null,
 			$shippingParams
 		);
 		$this->debug('Cancel shipment result', $result, $shippingParams);
-		return $result && isset($result->status) ? $result->status === 'cancelled' : false;
+
+		// DELETE zwraca zaktualizowany obiekt przesyłki ze statusem `cancelled` przy sukcesie.
+		if (is_object($result) && isset($result->status)) {
+			return $result->status === 'cancelled';
+		}
+
+		// Niektóre wersje API zwracają 200/204 bez ciała — potraktuj brak błędu jako sukces.
+		if (is_object($result) && isset($result->_httpCode)) {
+			return $result->_httpCode >= 200 && $result->_httpCode < 300;
+		}
+
+		return false;
 	}
 	
 	/**
@@ -793,10 +811,11 @@ class InpostHika extends \hikashopShippingPlugin
 		
 		$this->debug('Getting label for shipment', ['shipment_id' => $shipmentId], $shippingParams);
 		
-		// Pobierz etykietę jako PDF
+		// Pobierz etykietę jako PDF.
+		// format=Pdf, type=normal (A4) — zgodnie z oficjalną wtyczką InPost (type=A6 = mniejsza etykieta).
 		$labelData = $this->callShipXApi(
 			'GET',
-			'/v1/shipments/' . $shipmentId . '/label?format=pdf&type=normal',
+			'/v1/shipments/' . $shipmentId . '/label?format=Pdf&type=normal',
 			null,
 			$shippingParams,
 			true // raw response (PDF)
@@ -868,8 +887,13 @@ class InpostHika extends \hikashopShippingPlugin
 			if ($data) {
 				curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode($data));
 			}
+		} elseif ($method === 'DELETE' || $method === 'PUT') {
+			curl_setopt($ch, CURLOPT_CUSTOMREQUEST, $method);
+			if ($data) {
+				curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode($data));
+			}
 		}
-		
+
 		$response = curl_exec($ch);
 		$httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
 		$error = curl_error($ch);
