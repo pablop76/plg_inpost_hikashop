@@ -195,6 +195,13 @@ plg_inpost_hika/
   lub **Nadanie w PaczkoPunkcie** (`pop`). Wcześniej było na sztywno `dispatch_order` (kurier po
   odbiór), niezależnie od tego jak faktycznie nadajesz paczki. Domyślnie ustawione na `parcel_locker`,
   zgodnie z oficjalną wtyczką InPost.
+- **UPROSZCZENIE (wg oficjalnej wtyczki InPost)**: usunięto zbędny krok „Opłać przesyłkę"
+  (flow ofert + `/buy`). Przesyłka jest tworzona z usługą `inpost_locker_standard` i ShipX
+  przetwarza/potwierdza ją automatycznie — nie ma osobnego „płacenia" (konto InPost obciąża się
+  za przesyłkę niezależnie). Tworzenie = jeden `POST .../shipments`. Zniknęły: przycisk „Opłać
+  przesyłkę", metody `handleBuyShipment()`/`buyShipmentOffer()`, odpytywanie ofert z `sleep()` i
+  mylące komunikaty „wymaga opłacenia". Etykieta pobierana, gdy InPost przetworzy przesyłkę.
+  W panelu zamówienia dla utworzonej przesyłki: **Pobierz etykietę** + **Utwórz ponownie**.
 
 ### v4.2.8 (2026-07-04)
 
