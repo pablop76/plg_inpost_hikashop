@@ -1,7 +1,7 @@
 <?php
 /**
  * @package     HikaShop InPost Paczkomaty Shipping Plugin
- * @version     4.2.8
+ * @version     4.2.9
  * @copyright   (C) 2026
  * @license     GNU/GPLv3 http://www.gnu.org/licenses/gpl-3.0.html
  */
@@ -81,6 +81,12 @@ class InpostHika extends \hikashopShippingPlugin
 			'small' => 'PLG_HIKASHOPSHIPPING_INPOST_HIKA_SIZE_SMALL',
 			'medium' => 'PLG_HIKASHOPSHIPPING_INPOST_HIKA_SIZE_MEDIUM',
 			'large' => 'PLG_HIKASHOPSHIPPING_INPOST_HIKA_SIZE_LARGE'
+		)),
+		// Sposób nadania paczki (ShipX custom_attributes.sending_method)
+		'sending_method' => array('PLG_HIKASHOPSHIPPING_INPOST_HIKA_SENDING_METHOD', 'list', array(
+			'parcel_locker' => 'PLG_HIKASHOPSHIPPING_INPOST_HIKA_SENDING_PARCEL_LOCKER',
+			'dispatch_order' => 'PLG_HIKASHOPSHIPPING_INPOST_HIKA_SENDING_DISPATCH_ORDER',
+			'pop' => 'PLG_HIKASHOPSHIPPING_INPOST_HIKA_SENDING_POP'
 		)),
 		// Mapa GeoWidget - wybór API
 		'geowidget_api' => array('PLG_HIKASHOPSHIPPING_INPOST_HIKA_GEOWIDGET_API', 'list', array(
@@ -490,6 +496,15 @@ class InpostHika extends \hikashopShippingPlugin
 			$parcelSize = 'small';
 		}
 
+		// Sposób nadania (ShipX custom_attributes.sending_method) - z konfiguracji, z walidacją.
+		// parcel_locker = nadawca zostawia paczkę w paczkomacie; dispatch_order = kurier po odbiór;
+		// pop = nadanie w PaczkoPunkcie. Domyślnie parcel_locker (jak oficjalna wtyczka InPost).
+		$allowedSending = array('parcel_locker', 'dispatch_order', 'pop');
+		$sendingMethod = $shippingParams->sending_method ?? 'parcel_locker';
+		if (!in_array($sendingMethod, $allowedSending, true)) {
+			$sendingMethod = 'parcel_locker';
+		}
+
 		// Zabezpieczenie przed utworzeniem kilku przesyłek dla jednego zamówienia
 		// (np. podwójne kliknięcie przycisku albo ponowna próba po błędzie kodu paczkomatu
 		// - przycisk "Utwórz przesyłkę" jest widoczny tylko dopóki nie ma zapisanego
@@ -553,7 +568,7 @@ class InpostHika extends \hikashopShippingPlugin
 			'reference' => 'Zamówienie #' . $order->order_id,
 			'custom_attributes' => array(
 				'target_point' => $lockerName,
-				'sending_method' => 'dispatch_order'
+				'sending_method' => $sendingMethod
 			)
 		);
 		
@@ -1029,6 +1044,7 @@ class InpostHika extends \hikashopShippingPlugin
 		$element->shipping_params->sender_city = '';
 		$element->shipping_params->sender_postcode = '';
 		$element->shipping_params->default_parcel_size = 'small';
+		$element->shipping_params->sending_method = 'parcel_locker';
 		// Mapa GeoWidget
 		$element->shipping_params->default_lat = '52.2297';
 		$element->shipping_params->default_lng = '21.0122';

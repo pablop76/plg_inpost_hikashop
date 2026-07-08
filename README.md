@@ -188,6 +188,14 @@ plg_inpost_hika/
 
 ## Changelog
 
+### v4.2.9 (2026-07-08)
+
+- **NOWOŚĆ**: „Sposób nadania paczki" jako opcja w konfiguracji wtyczki (`sending_method`):
+  **Nadanie w paczkomacie** (`parcel_locker`, domyślne), **Odbiór przez kuriera** (`dispatch_order`)
+  lub **Nadanie w PaczkoPunkcie** (`pop`). Wcześniej było na sztywno `dispatch_order` (kurier po
+  odbiór), niezależnie od tego jak faktycznie nadajesz paczki. Domyślnie ustawione na `parcel_locker`,
+  zgodnie z oficjalną wtyczką InPost.
+
 ### v4.2.8 (2026-07-04)
 
 - **BUGFIX (anulowanie przesyłki)**: Poprawiono endpoint anulowania na `DELETE /v1/shipments/{id}`
