@@ -188,6 +188,14 @@ plg_inpost_hika/
 
 ## Changelog
 
+### v4.2.10 (2026-07-08)
+
+- **NOWOŚĆ (diagnostyka)**: W panelu zamówienia dla utworzonej przesyłki pokazywany jest teraz
+  **numer nadania (tracking number)** oraz **ID organizacji** przesyłki. Po numerze nadania szukasz
+  przesyłki w Managerze Paczek (wewnętrzne ID ShipX, np. 14066186, NIE jest numerem nadania). ID
+  organizacji pozwala zweryfikować, czy w Managerze logujesz się na to samo konto, do którego trafia
+  przesyłka (częsta przyczyna „nie widzę przesyłki" — patrzysz na inną organizację/konto).
+
 ### v4.2.9 (2026-07-08)
 
 - **NOWOŚĆ**: „Sposób nadania paczki" jako opcja w konfiguracji wtyczki (`sending_method`):

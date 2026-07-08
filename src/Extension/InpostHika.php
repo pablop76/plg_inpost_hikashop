@@ -1,7 +1,7 @@
 <?php
 /**
  * @package     HikaShop InPost Paczkomaty Shipping Plugin
- * @version     4.2.9
+ * @version     4.2.10
  * @copyright   (C) 2026
  * @license     GNU/GPLv3 http://www.gnu.org/licenses/gpl-3.0.html
  */
@@ -235,9 +235,24 @@ class InpostHika extends \hikashopShippingPlugin
 			$shippingParams = $this->getShippingParamsForOrder($order);
 			$shipmentInfo = $this->callShipXApi('GET', '/v1/shipments/' . $shipmentId, null, $shippingParams);
 			$shipmentStatus = $shipmentInfo->status ?? 'unknown';
+			// Numer nadania (tracking number) - po nim szukasz przesyłki w Managerze Paczek.
+			// UWAGA: $shipmentId (np. 14066186) to WEWNĘTRZNE ID ShipX, NIE numer nadania.
+			$trackingNumber = $shipmentInfo->tracking_number ?? null;
+			// organization_id z odpowiedzi - do weryfikacji czy patrzysz na właściwe konto w Managerze
+			$shipmentOrgId = $shipmentInfo->organization_id ?? null;
 
 			echo '<span style="color:#28a745; font-weight:bold;">✅ ' . Text::_('PLG_HIKASHOPSHIPPING_INPOST_HIKA_SHIPMENT_CREATED') . ': ' . htmlspecialchars($shipmentId) . '</span>';
 			echo ' <span style="color:#666;">(status: ' . htmlspecialchars($shipmentStatus) . ')</span><br>';
+			if (!empty($trackingNumber)) {
+				echo '<span style="color:#1565c0;">📮 Numer nadania: <strong>' . htmlspecialchars($trackingNumber)
+					. '</strong></span> <small style="color:#666;">(po tym numerze szukaj w Managerze Paczek)</small><br>';
+			} else {
+				echo '<small style="color:#856404;">Numer nadania jeszcze nieprzydzielony - InPost przetwarza przesyłkę (odśwież za chwilę).</small><br>';
+			}
+			if (!empty($shipmentOrgId)) {
+				echo '<small style="color:#666;">ID organizacji przesyłki: ' . htmlspecialchars($shipmentOrgId)
+					. ' — musi się zgadzać z kontem, na które logujesz się w Managerze Paczek.</small><br>';
+			}
 
 			// Przesyłka istnieje - zawsze pokazujemy "Pobierz etykietę" + "Utwórz ponownie".
 			// Nie ma kroku "Opłać" (usunięty w v4.2.9): przesyłka z usługą inpost_locker_standard
