@@ -511,29 +511,28 @@ class InpostHika extends \hikashopShippingPlugin
 			return;
 		}
 		
-		// Przygotuj dane przesyłki dla API
+		// Kod paczkomatu ShipX przyjmuje wielkimi literami (w sandboxie pole jest edytowalne ręcznie)
+		$targetPoint = strtoupper(preg_replace('/[^A-Za-z0-9]/', '', (string)$lockerName));
+		if ($targetPoint === '') {
+			$app->enqueueMessage('Błąd: brak kodu paczkomatu dla tego zamówienia.', 'error');
+			return;
+		}
+
+		$receiver = $this->buildReceiver($address);
+		if (empty($receiver['phone'])) {
+			$app->enqueueMessage(
+				'Błąd: odbiorca nie ma poprawnego numeru telefonu (ShipX wymaga 9 cyfr). '
+				. 'Uzupełnij telefon w adresie dostawy zamówienia.',
+				'error'
+			);
+			return;
+		}
+
+		// Zgodnie z dokumentacją ShipX (tryb uproszczony) wymagane są tylko:
+		// receiver, parcels (tablica) i service. Sender jest opcjonalny - gdy go nie wyślemy,
+		// InPost użyje danych organizacji.
 		$shipmentData = array(
-			'receiver' => array(
-				'name' => trim($address->address_firstname . ' ' . $address->address_lastname),
-				'company_name' => $address->address_company ?? '',
-				'first_name' => $address->address_firstname,
-				'last_name' => $address->address_lastname,
-				'email' => $address->user_email ?? '',
-				'phone' => $address->address_telephone ?? ''
-			),
-			'sender' => array(
-				'name' => $shippingParams->sender_name ?? '',
-				'company_name' => $shippingParams->sender_company ?? '',
-				'email' => $shippingParams->sender_email ?? '',
-				'phone' => $shippingParams->sender_phone ?? '',
-				'address' => array(
-					'street' => $shippingParams->sender_street ?? '',
-					'building_number' => $shippingParams->sender_building ?? '',
-					'city' => $shippingParams->sender_city ?? '',
-					'post_code' => $shippingParams->sender_postcode ?? '',
-					'country_code' => 'PL'
-				)
-			),
+			'receiver' => $receiver,
 			'parcels' => array(
 				array(
 					'template' => $parcelSize
@@ -542,11 +541,18 @@ class InpostHika extends \hikashopShippingPlugin
 			'service' => 'inpost_locker_standard',
 			'reference' => 'Zamówienie #' . $order->order_id,
 			'custom_attributes' => array(
-				'target_point' => $lockerName,
+				'target_point' => $targetPoint,
 				'sending_method' => $sendingMethod
 			)
 		);
-		
+
+		$sender = $this->buildSender($shippingParams);
+		if ($sender !== null) {
+			$shipmentData['sender'] = $sender;
+		} else {
+			$this->debug('Sender pominięty (niekompletne dane) - ShipX użyje danych organizacji', null, $shippingParams);
+		}
+
 		$this->debug('Creating shipment', $shipmentData, $shippingParams);
 		
 		// Wywołaj API
@@ -615,6 +621,101 @@ class InpostHika extends \hikashopShippingPlugin
 		}
 	}
 	
+	/**
+	 * Normalizuje telefon do 9 cyfr, jakich wymaga ShipX (bez +48, spacji i myślników).
+	 * Zwraca pusty string, gdy numeru nie da się sprowadzić do 9 cyfr.
+	 */
+	protected function normalizePhone($phone)
+	{
+		$digits = preg_replace('/\D+/', '', (string)$phone);
+
+		if (strlen($digits) === 11 && strpos($digits, '48') === 0) {
+			$digits = substr($digits, 2);   // +48 xxx xxx xxx
+		} elseif (strlen($digits) === 13 && strpos($digits, '0048') === 0) {
+			$digits = substr($digits, 4);   // 0048 xxx xxx xxx
+		} elseif (strlen($digits) === 10 && strpos($digits, '0') === 0) {
+			$digits = substr($digits, 1);   // 0 xxx xxx xxx
+		}
+
+		return strlen($digits) === 9 ? $digits : '';
+	}
+
+	/**
+	 * Normalizuje kod pocztowy do formatu NN-NNN wymaganego przez ShipX.
+	 */
+	protected function normalizePostCode($postCode)
+	{
+		$digits = preg_replace('/\D+/', '', (string)$postCode);
+
+		return strlen($digits) === 5 ? substr($digits, 0, 2) . '-' . substr($digits, 2) : '';
+	}
+
+	/**
+	 * Buduje obiekt receiver wg specyfikacji ShipX.
+	 *
+	 * ShipX zna wyłącznie pola company_name, first_name, last_name, email i phone
+	 * (nie ma pola `name`), a pustych stringów nie przepuszcza walidator - dlatego
+	 * puste wartości pomijamy zamiast wysyłać.
+	 */
+	protected function buildReceiver($address)
+	{
+		$fields = array(
+			'company_name' => trim((string)($address->address_company ?? '')),
+			'first_name'   => trim((string)($address->address_firstname ?? '')),
+			'last_name'    => trim((string)($address->address_lastname ?? '')),
+			'email'        => trim((string)($address->user_email ?? '')),
+			'phone'        => $this->normalizePhone($address->address_telephone ?? ''),
+		);
+
+		return array_filter($fields, function ($value) {
+			return $value !== '';
+		});
+	}
+
+	/**
+	 * Buduje obiekt sender wg specyfikacji ShipX albo zwraca null.
+	 *
+	 * Sender jest opcjonalny: bez kompletu danych lepiej pominąć go w żądaniu,
+	 * bo InPost podstawi wtedy dane organizacji. Wysyłanie połowicznego obiektu
+	 * (albo pustych stringów) kończy się błędem walidacji.
+	 */
+	protected function buildSender($shippingParams)
+	{
+		$street   = trim((string)($shippingParams->sender_street ?? ''));
+		$building = trim((string)($shippingParams->sender_building ?? ''));
+		$city     = trim((string)($shippingParams->sender_city ?? ''));
+		$email    = trim((string)($shippingParams->sender_email ?? ''));
+		$postCode = $this->normalizePostCode($shippingParams->sender_postcode ?? '');
+		$phone    = $this->normalizePhone($shippingParams->sender_phone ?? '');
+
+		if ($street === '' || $building === '' || $city === '' || $email === '' || $postCode === '' || $phone === '') {
+			return null;
+		}
+
+		// ShipX oczekuje first_name/last_name, a konfiguracja trzyma jedno pole "nazwa nadawcy"
+		$nameParts = preg_split('/\s+/', trim((string)($shippingParams->sender_name ?? '')), 2);
+
+		$sender = array_filter(array(
+			'company_name' => trim((string)($shippingParams->sender_company ?? '')),
+			'first_name'   => $nameParts[0] ?? '',
+			'last_name'    => $nameParts[1] ?? '',
+			'email'        => $email,
+			'phone'        => $phone,
+		), function ($value) {
+			return $value !== '';
+		});
+
+		$sender['address'] = array(
+			'street'          => $street,
+			'building_number' => $building,
+			'city'            => $city,
+			'post_code'       => $postCode,
+			'country_code'    => 'PL',
+		);
+
+		return $sender;
+	}
+
 	/**
 	 * Tłumaczy błędy ShipX API na zrozumiałe komunikaty
 	 */
