@@ -241,6 +241,15 @@ class InpostHika extends \hikashopShippingPlugin
 		echo '<strong style="color:#1565c0;">🚚 InPost ShipX (Admin):</strong> ' . $envBadge
 			. ' <small>(kod: ' . htmlspecialchars($lockerCode) . ')</small><br>';
 
+		if (!empty($shippingParams->debug)) {
+			$debugLogFile = $this->resolveDebugLogPath();
+			echo '<small style="color:#666;">Log debug: '
+				. ($debugLogFile !== ''
+					? htmlspecialchars($debugLogFile)
+					: '<span style="color:#d32f2f;">brak zapisywalnego katalogu logów — sprawdź log_path w konfiguracji Joomli</span>')
+				. '</small><br>';
+		}
+
 		if (!empty($shipmentId)) {
 			// Przesyłka już utworzona - sprawdź jej status (informacyjnie)
 			$shipmentInfo = $this->callShipXApi('GET', '/v1/shipments/' . $shipmentId, null, $shippingParams);
@@ -1155,6 +1164,32 @@ class InpostHika extends \hikashopShippingPlugin
 	}
 
 	/**
+	 * Zwraca ścieżkę pliku debug albo '' gdy nie ma gdzie pisać.
+	 *
+	 * Joomla 4/5 loguje do administrator/logs, a nie do JPATH_ROOT/logs - stąd wcześniejsze
+	 * ostrzeżenia file_put_contents. Bierzemy log_path z konfiguracji, potem standardowe
+	 * lokalizacje; jeśli żadna nie jest zapisywalna, milczymy zamiast zasypywać panel błędami.
+	 */
+	protected function resolveDebugLogPath()
+	{
+		$candidates = array(
+			(string) Factory::getApplication()->get('log_path', ''),
+			JPATH_ADMINISTRATOR . '/logs',
+			JPATH_ROOT . '/logs',
+		);
+
+		foreach ($candidates as $dir) {
+			$dir = rtrim(trim($dir), '/\\');
+
+			if ($dir !== '' && is_dir($dir) && is_writable($dir)) {
+				return $dir . '/inpost_hika_debug.log';
+			}
+		}
+
+		return '';
+	}
+
+	/**
 	 * Logowanie debug do pliku
 	 */
 	protected function debug($message, $data = null, $shippingParams = null)
@@ -1164,17 +1199,10 @@ class InpostHika extends \hikashopShippingPlugin
 			$debugEnabled = (bool)$shippingParams->debug;
 		}
 		if (!$debugEnabled) return;
-		
-		// Joomla 4/5 domyślnie loguje do administrator/logs, nie do JPATH_ROOT/logs.
-		$logPath = Factory::getApplication()->get('log_path', JPATH_ADMINISTRATOR . '/logs');
-		if (!is_dir($logPath)) {
-			$logPath = JPATH_ADMINISTRATOR . '/logs';
-		}
-		if (!is_dir($logPath) || !is_writable($logPath)) {
-			return;
-		}
 
-		$logFile = rtrim($logPath, '/\\') . '/inpost_hika_debug.log';
+		$logFile = $this->resolveDebugLogPath();
+		if ($logFile === '') return;
+
 		$timestamp = date('Y-m-d H:i:s');
 		$logMessage = "[{$timestamp}] {$message}";
 		if ($data !== null) {
