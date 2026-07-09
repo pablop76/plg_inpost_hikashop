@@ -1,7 +1,7 @@
 <?php
 /**
  * @package     HikaShop InPost Paczkomaty Shipping Plugin
- * @version     4.2.13
+ * @version     4.2.14
  * @copyright   (C) 2026
  * @license     GNU/GPLv3 http://www.gnu.org/licenses/gpl-3.0.html
  */
@@ -330,9 +330,11 @@ class InpostHika extends \hikashopShippingPlugin
 				echo '<input type="hidden" name="inpost_action" value="create_shipment" />';
 				echo '<input type="hidden" name="order_id" value="' . (int)$order->order_id . '" />';
 				if ($isSandbox) {
-					// W trybie sandbox pozwól wpisać kod ręcznie (testowe paczkomaty)
+					// W trybie sandbox pole jest edytowalne: domyślnie realny kod wybrany na mapie
+					// (zwykle waliduje się już w sandboxie), a gdyby InPost go odrzucił - można wpisać
+					// kod testowy jako furtkę awaryjną.
 					echo '<input type="text" name="locker_name" value="' . htmlspecialchars($lockerCode) . '" style="width:100px; padding:5px; margin-right:5px;" placeholder="Kod paczkomatu" />';
-					echo '<small style="color:#666; display:block; margin-bottom:5px;">Sandbox: użyj np. BBI02A, AND01A</small>';
+					echo '<small style="color:#666; display:block; margin-bottom:5px;">Sandbox: jeśli realny kod zostanie odrzucony, użyj testowego (np. BBI02A, AND01A).</small>';
 				} else {
 					echo '<input type="hidden" name="locker_name" value="' . htmlspecialchars($lockerCode) . '" />';
 				}

@@ -188,6 +188,14 @@ plg_inpost_hika/
 
 ## Changelog
 
+### v4.2.14 (2026-07-09)
+
+- **UX (sandbox):** złagodzono podpowiedź przy polu kodu paczkomatu. Realne kody wybrane na mapie
+  zwykle walidują się już w sandboxie, więc zamiast „Sandbox: użyj np. BBI02A, AND01A" pole
+  podpowiada teraz „jeśli realny kod zostanie odrzucony, użyj testowego (np. BBI02A, AND01A)". Pole
+  pozostaje edytowalne jako furtka awaryjna — pokrycie punktów w sandboxie kontroluje InPost i może
+  się zmieniać. Bez zmian w logice tworzenia przesyłki (kod nadal leci 1:1 do `target_point`).
+
 ### v4.2.13 (2026-07-09)
 
 - **POPRAWKA (UX)**: **Numer nadania widoczny bez ręcznego odświeżania strony.** InPost przydziela
