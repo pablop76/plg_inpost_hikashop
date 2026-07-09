@@ -232,12 +232,17 @@ class InpostHika extends \hikashopShippingPlugin
 		$lockerCode = preg_replace('/[^A-Z0-9]/i', '', $lockerName);
 		
 		// Sekcja ShipX API (tylko admin)
+		$envIsSandbox = ($shippingParams->api_mode ?? 'production') === 'sandbox';
+		$envBadge = $envIsSandbox
+			? '<span style="background:#4caf50; color:#fff; padding:2px 8px; border-radius:4px; font-size:12px;">SANDBOX</span>'
+			: '<span style="background:#d32f2f; color:#fff; padding:2px 8px; border-radius:4px; font-size:12px;">PRODUKCJA — przesyłki płatne</span>';
+
 		echo '<div id="inpost_shipx_admin" style="background:#e3f2fd; border:2px solid #2196f3; padding:15px; margin:15px 0; border-radius:8px; font-size:14px;">';
-		echo '<strong style="color:#1565c0;">🚚 InPost ShipX (Admin):</strong> <small>(kod: ' . htmlspecialchars($lockerCode) . ')</small><br>';
-		
+		echo '<strong style="color:#1565c0;">🚚 InPost ShipX (Admin):</strong> ' . $envBadge
+			. ' <small>(kod: ' . htmlspecialchars($lockerCode) . ')</small><br>';
+
 		if (!empty($shipmentId)) {
 			// Przesyłka już utworzona - sprawdź jej status (informacyjnie)
-			$shippingParams = $this->getShippingParamsForOrder($order);
 			$shipmentInfo = $this->callShipXApi('GET', '/v1/shipments/' . $shipmentId, null, $shippingParams);
 			$shipmentStatus = $shipmentInfo->status ?? 'unknown';
 			// Numer nadania (tracking number) - po nim szukasz przesyłki w Managerze Paczek.
@@ -863,19 +868,41 @@ class InpostHika extends \hikashopShippingPlugin
 	protected function getShippingParamsForOrder($order)
 	{
 		$db = Factory::getContainer()->get(DatabaseInterface::class);
+
+		// Wtyczka ma $multiple = true, więc opublikowanych metod inpost_hika może być kilka
+		// (np. osobna sandboxowa i produkcyjna). Bierzemy tę, którą faktycznie wybrano
+		// w zamówieniu - inaczej trafiamy w losową i wysyłamy przesyłkę na złe środowisko.
+		$shippingId = isset($order->order_shipping_id) ? (int)$order->order_shipping_id : 0;
+		if ($shippingId > 0) {
+			$query = $db->getQuery(true)
+				->select($db->quoteName('shipping_params'))
+				->from($db->quoteName('#__hikashop_shipping'))
+				->where($db->quoteName('shipping_id') . ' = ' . $shippingId)
+				->where($db->quoteName('shipping_type') . ' = ' . $db->quote($this->name));
+			$db->setQuery($query);
+			$result = $db->loadResult();
+
+			if ($result) {
+				return unserialize($result);
+			}
+		}
+
+		// Fallback (np. zamówienie bez zapisanego shipping_id): najstarsza opublikowana
+		// metoda - deterministycznie, żeby wynik nie zależał od kolejności zwracanej przez bazę.
 		$query = $db->getQuery(true)
 			->select($db->quoteName('shipping_params'))
 			->from($db->quoteName('#__hikashop_shipping'))
 			->where($db->quoteName('shipping_type') . ' = ' . $db->quote($this->name))
 			->where($db->quoteName('shipping_published') . ' = 1')
+			->order($db->quoteName('shipping_id') . ' ASC')
 			->setLimit(1);
 		$db->setQuery($query);
 		$result = $db->loadResult();
-		
+
 		if ($result) {
 			return unserialize($result);
 		}
-		
+
 		return new \stdClass();
 	}
 	
@@ -1037,7 +1064,16 @@ class InpostHika extends \hikashopShippingPlugin
 		}
 		if (!$debugEnabled) return;
 		
-		$logFile = JPATH_ROOT . '/logs/inpost_hika_debug.log';
+		// Joomla 4/5 domyślnie loguje do administrator/logs, nie do JPATH_ROOT/logs.
+		$logPath = Factory::getApplication()->get('log_path', JPATH_ADMINISTRATOR . '/logs');
+		if (!is_dir($logPath)) {
+			$logPath = JPATH_ADMINISTRATOR . '/logs';
+		}
+		if (!is_dir($logPath) || !is_writable($logPath)) {
+			return;
+		}
+
+		$logFile = rtrim($logPath, '/\\') . '/inpost_hika_debug.log';
 		$timestamp = date('Y-m-d H:i:s');
 		$logMessage = "[{$timestamp}] {$message}";
 		if ($data !== null) {
