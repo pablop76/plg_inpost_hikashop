@@ -199,9 +199,15 @@ plg_inpost_hika/
   (2) widok najpierw używa zapisanego numeru (cache), a świeży z API utrwala; (3) gdy numer wyjątkowo
   długo się nie pojawia, panel **odświeża się automatycznie** (do 3 razy co 4 s, licznik w URL), więc
   nie trzeba już odświeżać ręcznie.
+- **PORZĄDKI (panel zamówienia):** z widoku zamówienia usunięto dane diagnostyczne — **pełną
+  odpowiedź API ShipX (dump JSON)**, ramkę **„To normalny etap…"** oraz linię **„ID organizacji
+  przesyłki"**. To dane diagnostyczne — ich miejsce jest w logach, nie na stronie sklepu. Pełna
+  odpowiedź API trafia do `JPATH_ROOT/logs/inpost_hika_debug.log`, gdy w konfiguracji wtyczki
+  włączony jest parametr **„debug"**. W panelu zostają tylko rzeczy potrzebne do pracy: status
+  przesyłki, **numer nadania** i przyciski (Pobierz etykietę / Utwórz ponownie).
 - **Uwaga (sandbox):** brak przesyłki w Managerze Paczek przy `status: confirmed` + przydzielonym
   numerze nadania to ograniczenie środowiska testowego (API sandbox ≠ panel sandbox), nie błąd —
-  autorytatywnym dowodem istnienia przesyłki jest odpowiedź API (rozwijany dump JSON w panelu).
+  autorytatywnym dowodem istnienia przesyłki jest odpowiedź API (w logach przy włączonym „debug").
 
 ### v4.2.12 (2026-07-08)
 

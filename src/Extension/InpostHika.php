@@ -255,25 +255,12 @@ class InpostHika extends \hikashopShippingPlugin
 			} else {
 				$trackingNumber = $storedTracking;
 			}
-			// organization_id z odpowiedzi - do weryfikacji czy patrzysz na właściwe konto w Managerze
-			$shipmentOrgId = $shipmentInfo->organization_id ?? null;
 
 			// Czytelna nazwa statusu obok technicznej (np. "confirmed — Przygotowana do nadania").
 			$statusHuman = $this->translateShipmentStatus($shipmentStatus);
 			$statusSuffix = ($statusHuman !== $shipmentStatus) ? ' — ' . $statusHuman : '';
 			echo '<span style="color:#28a745; font-weight:bold;">✅ ' . Text::_('PLG_HIKASHOPSHIPPING_INPOST_HIKA_SHIPMENT_CREATED') . ': ' . htmlspecialchars($shipmentId) . '</span>';
 			echo ' <span style="color:#666;">(status: ' . htmlspecialchars($shipmentStatus) . htmlspecialchars($statusSuffix) . ')</span><br>';
-			// Podpowiedź dla statusów "nienadanych" wg definicji InPost — żeby nie mylić z błędem.
-			// To najczęstsze źródło paniki "nie widzę przesyłki w Managerze".
-			$notSentStatuses = array('created', 'offers_prepared', 'offer_selected', 'confirmed');
-			if (in_array($shipmentStatus, $notSentStatuses, true)) {
-				echo '<div style="background:#eef6ff; border-left:3px solid #2196f3; padding:8px 12px; margin:6px 0; color:#0d47a1; font-size:12.5px;">';
-				echo 'ℹ️ <b>To normalny etap</b>, nie błąd. Przesyłka jest przygotowana, ale <b>jeszcze nienadana fizycznie</b>. '
-					. 'W Managerze Paczek znajdziesz ją w widoku <b>„Opłacone → Do nadania"</b> (nie w „Wysłane"). '
-					. 'Jeśli jej nie widać — sprawdź filtr <b>„Data utworzenia"</b> (musi obejmować dzisiejszą datę) '
-					. 'i kierunek <b>„Wychodzące"</b>.';
-				echo '</div>';
-			}
 			if (!empty($trackingNumber)) {
 				echo '<span style="color:#1565c0;">📮 Numer nadania: <strong>' . htmlspecialchars($trackingNumber)
 					. '</strong></span> <small style="color:#666;">(po tym numerze szukaj w Managerze Paczek)</small><br>';
@@ -295,24 +282,10 @@ class InpostHika extends \hikashopShippingPlugin
 						. '(InPost nietypowo długo przetwarza przesyłkę).</small><br>';
 				}
 			}
-			if (!empty($shipmentOrgId)) {
-				echo '<small style="color:#666;">ID organizacji przesyłki: ' . htmlspecialchars($shipmentOrgId)
-					. ' — musi się zgadzać z kontem, na które logujesz się w Managerze Paczek.</small><br>';
-			}
-
-			// Pełna, surowa odpowiedź API ShipX — ostateczne, autorytatywne źródło prawdy o przesyłce.
-			// W sandboxie Manager Paczek bywa niezsynchronizowany z API; ten dump pokazuje realny stan
-			// przesyłki (status, tracking, organizacja, usługa, daty) bez oglądania się na panel.
-			$rawJson = json_encode($shipmentInfo, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
-			if ($rawJson !== false) {
-				echo '<details style="margin-top:8px;">';
-				echo '<summary style="cursor:pointer; color:#1565c0; font-weight:bold;">'
-					. '🔎 Pełna odpowiedź API ShipX (dowód, że przesyłka istnieje)</summary>';
-				echo '<pre style="background:#f5f5f5; border:1px solid #ccc; border-radius:4px; padding:10px; '
-					. 'margin-top:6px; max-height:400px; overflow:auto; font-size:12px; white-space:pre-wrap; '
-					. 'word-break:break-word; color:#222;">' . htmlspecialchars($rawJson) . '</pre>';
-				echo '</details>';
-			}
+			// Pełna odpowiedź API ShipX nie jest pokazywana na stronie zamówienia — to dane
+			// diagnostyczne; ich miejsce jest w logach (JPATH_ROOT/logs/inpost_hika_debug.log,
+			// gdy w konfiguracji włączony jest „debug”).
+			$this->debug('Shipment info (order view)', $shipmentInfo, $shippingParams);
 
 			// Przesyłka istnieje - zawsze pokazujemy "Pobierz etykietę" + "Utwórz ponownie".
 			// Nie ma kroku "Opłać" (usunięty w v4.2.9): przesyłka z usługą inpost_locker_standard
