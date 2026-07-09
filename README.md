@@ -188,6 +188,31 @@ plg_inpost_hika/
 
 ## Changelog
 
+### v4.2.15 (2026-07-09)
+
+- **POPRAWKA: logowanie debug w ogóle nie działało.** Log szedł do `JPATH_ROOT/logs`, katalogu
+  którego w Joomli 4/5 nie ma — `file_put_contents` wypisywał ostrzeżenia wprost do panelu
+  zamówienia, a plik nigdy nie powstawał. Nowe `resolveDebugLogPath()` bierze pierwszy zapisywalny
+  z: `log_path` z konfiguracji Joomli, `administrator/logs`, `JPATH_ROOT/logs`. Gdy żadnego nie ma,
+  debug milczy zamiast zasypywać panel błędami. Ustalona ścieżka pliku jest teraz wypisana w panelu
+  zamówienia przy włączonym debugu.
+- **POPRAWKA: wtyczka mogła użyć konfiguracji innej metody wysyłki.** `getShippingParamsForOrder()`
+  pobierał pierwszą lepszą opublikowaną metodę `inpost_hika` — bez `ORDER BY` i ignorując
+  `order_shipping_id` zamówienia. Przy `$multiple = true` i dwóch skonfigurowanych metodach
+  (np. sandbox i produkcja) przesyłka mogła powstać na innym środowisku niż to widoczne
+  w ustawieniach. Teraz konfiguracja jest pobierana po metodzie faktycznie wybranej w zamówieniu.
+- **Payload przesyłki zgodny ze specyfikacją ShipX (tryb uproszczony).** Usunięto nieistniejące
+  w API pole `name` z `receiver` i `sender`; nadawca rozbity na `first_name`/`last_name` i pomijany
+  w całości, gdy dane w konfiguracji są niekompletne (wtedy InPost podstawia dane organizacji).
+  Telefony normalizowane do 9 cyfr (obcinane `+48`, `0048`, wiodące `0`), kod pocztowy do `NN-NNN`,
+  `target_point` wymuszony wielkimi literami. Zamówienia z telefonem zapisanym jako
+  `+48 501 234 567` wcześniej wywalały się na walidacji ShipX.
+- **Walidacja przed wysłaniem:** brak kodu paczkomatu lub telefonu odbiorcy, którego nie da się
+  sprowadzić do 9 cyfr, daje czytelny komunikat w panelu zamiast surowego błędu API.
+- **Badge środowiska w panelu zamówienia:** zielony `SANDBOX` albo czerwony
+  `PRODUKCJA — przesyłki płatne`, żeby nie dało się pomylić trybu przed kliknięciem
+  „Utwórz przesyłkę".
+
 ### v4.2.14 (2026-07-09)
 
 - **UX (sandbox):** złagodzono podpowiedź przy polu kodu paczkomatu. Realne kody wybrane na mapie
