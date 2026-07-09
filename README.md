@@ -188,6 +188,21 @@ plg_inpost_hika/
 
 ## Changelog
 
+### v4.2.13 (2026-07-09)
+
+- **POPRAWKA (UX)**: **Numer nadania widoczny bez ręcznego odświeżania strony.** InPost przydziela
+  `tracking_number` asynchronicznie (zwykle ~1 s po utworzeniu przesyłki), a wcześniej wtyczka
+  zapisywała tylko wewnętrzne `inpost_shipment_id` i pobierała numer „na żywo" przy renderze — w
+  chwili przekierowania po utworzeniu numer był jeszcze `null`, więc admin widział „nieprzydzielony"
+  i musiał ręcznie odświeżać. Teraz: (1) przy tworzeniu przesyłki wtyczka **krótko odpytuje ShipX**
+  (do 4 prób co ~1,2 s) i **zapisuje numer nadania w bazie** (nowa kolumna `inpost_tracking_number`);
+  (2) widok najpierw używa zapisanego numeru (cache), a świeży z API utrwala; (3) gdy numer wyjątkowo
+  długo się nie pojawia, panel **odświeża się automatycznie** (do 3 razy co 4 s, licznik w URL), więc
+  nie trzeba już odświeżać ręcznie.
+- **Uwaga (sandbox):** brak przesyłki w Managerze Paczek przy `status: confirmed` + przydzielonym
+  numerze nadania to ograniczenie środowiska testowego (API sandbox ≠ panel sandbox), nie błąd —
+  autorytatywnym dowodem istnienia przesyłki jest odpowiedź API (rozwijany dump JSON w panelu).
+
 ### v4.2.12 (2026-07-08)
 
 - **NOWOŚĆ**: **Format etykiety** jako opcja konfiguracji (`label_type`): **Normalna A4**

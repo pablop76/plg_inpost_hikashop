@@ -1,7 +1,7 @@
 <?php
 /**
  * @package     HikaShop InPost Paczkomaty Shipping Plugin
- * @version     4.2.12
+ * @version     4.2.13
  * @copyright   (C) 2026
  * @license     GNU/GPLv3 http://www.gnu.org/licenses/gpl-3.0.html
  */
@@ -242,7 +242,19 @@ class InpostHika extends \hikashopShippingPlugin
 			$shipmentStatus = $shipmentInfo->status ?? 'unknown';
 			// Numer nadania (tracking number) - po nim szukasz przesyłki w Managerze Paczek.
 			// UWAGA: $shipmentId (np. 14066186) to WEWNĘTRZNE ID ShipX, NIE numer nadania.
+			// InPost przydziela numer ASYNCHRONICZNIE (czasem pojawia się ~1 s po utworzeniu),
+			// dlatego cache'ujemy go w bazie: gdy live-GET już go zwraca - utrwalamy; gdy jeszcze
+			// nie - używamy wartości zapisanej wcześniej (krótki polling przy tworzeniu przesyłki).
+			// Dzięki temu numer jest widoczny od razu po utworzeniu, bez ręcznego odświeżania strony.
+			$storedTracking = $this->getTrackingNumberForOrder($order->order_id);
 			$trackingNumber = $shipmentInfo->tracking_number ?? null;
+			if (!empty($trackingNumber)) {
+				if ($trackingNumber !== $storedTracking) {
+					$this->storeTrackingNumber($order->order_id, $trackingNumber);
+				}
+			} else {
+				$trackingNumber = $storedTracking;
+			}
 			// organization_id z odpowiedzi - do weryfikacji czy patrzysz na właściwe konto w Managerze
 			$shipmentOrgId = $shipmentInfo->organization_id ?? null;
 
@@ -266,7 +278,22 @@ class InpostHika extends \hikashopShippingPlugin
 				echo '<span style="color:#1565c0;">📮 Numer nadania: <strong>' . htmlspecialchars($trackingNumber)
 					. '</strong></span> <small style="color:#666;">(po tym numerze szukaj w Managerze Paczek)</small><br>';
 			} else {
-				echo '<small style="color:#856404;">Numer nadania jeszcze nieprzydzielony - InPost przetwarza przesyłkę (odśwież za chwilę).</small><br>';
+				echo '<small style="color:#856404;">Numer nadania jeszcze nieprzydzielony - InPost przetwarza przesyłkę.</small><br>';
+				// Numer przydzielany jest async (zwykle w kilka sekund). Zamiast kazać
+				// adminowi ręcznie odświeżać stronę, odświeżamy ją automatycznie kilka razy,
+				// aż numer się pojawi. Licznik w URL (inpost_tn_wait) ogranicza to do 3 prób,
+				// żeby nie zapętlić przeładowań, gdy InPost wyjątkowo długo przetwarza.
+				$reloadCount = (int) $app->input->getInt('inpost_tn_wait', 0);
+				if ($reloadCount < 3) {
+					$reloadUrl = Route::_('index.php?option=com_hikashop&ctrl=order&task=edit&cid='
+						. (int)$order->order_id . '&inpost_tn_wait=' . ($reloadCount + 1), false);
+					echo '<small style="color:#856404;">⏳ Czekam na numer nadania — strona odświeży się automatycznie…</small><br>';
+					echo '<script>setTimeout(function(){ window.location.href = '
+						. json_encode($reloadUrl) . '; }, 4000);</script>';
+				} else {
+					echo '<small style="color:#856404;">Jeśli numer wciąż się nie pojawił, odśwież stronę ręcznie za chwilę '
+						. '(InPost nietypowo długo przetwarza przesyłkę).</small><br>';
+				}
 			}
 			if (!empty($shipmentOrgId)) {
 				echo '<small style="color:#666;">ID organizacji przesyłki: ' . htmlspecialchars($shipmentOrgId)
@@ -560,8 +587,19 @@ class InpostHika extends \hikashopShippingPlugin
 				->where($db->quoteName('order_id') . ' = ' . (int)$order->order_id);
 			$db->setQuery($query);
 			$db->execute();
-			
-			$this->debug('Shipment created successfully', ['shipment_id' => $result->id], $shippingParams);
+
+			// Numer nadania (tracking_number) InPost przydziela ASYNCHRONICZNIE - czasem jest już
+			// w odpowiedzi POST, czasem pojawia się ~1 s później. Spróbuj pobrać go i zapisać od razu
+			// (krótki polling), żeby był widoczny w panelu bez ręcznego odświeżania strony przez admina.
+			$trackingNumber = $result->tracking_number ?? null;
+			if (empty($trackingNumber)) {
+				$trackingNumber = $this->fetchTrackingNumberWithRetry($result->id, $shippingParams);
+			}
+			if (!empty($trackingNumber)) {
+				$this->storeTrackingNumber($order->order_id, $trackingNumber);
+			}
+
+			$this->debug('Shipment created successfully', ['shipment_id' => $result->id, 'tracking_number' => $trackingNumber], $shippingParams);
 
 			// Przesyłka utworzona z usługą `inpost_locker_standard` - to komplet.
 			// NIE robimy kroku ofert/`/buy` (jak oficjalna wtyczka InPost): przesyłka
@@ -881,15 +919,75 @@ class InpostHika extends \hikashopShippingPlugin
 	}
 
 	/**
-	 * Upewnia się że kolumna inpost_shipment_id istnieje
+	 * Pobiera zapisany numer nadania (tracking_number) dla zamówienia (lub null, jeśli brak).
+	 * Numer jest cache'owany w bazie, bo InPost przydziela go asynchronicznie po utworzeniu przesyłki.
+	 */
+	protected function getTrackingNumberForOrder($orderId)
+	{
+		$db = Factory::getContainer()->get(DatabaseInterface::class);
+		$columns = $db->getTableColumns('#__hikashop_order');
+		if (!isset($columns['inpost_tracking_number'])) {
+			return null;
+		}
+		$query = $db->getQuery(true)
+			->select($db->quoteName('inpost_tracking_number'))
+			->from($db->quoteName('#__hikashop_order'))
+			->where($db->quoteName('order_id') . ' = ' . (int)$orderId);
+		$db->setQuery($query);
+		return $db->loadResult();
+	}
+
+	/**
+	 * Zapisuje numer nadania (tracking_number) dla zamówienia.
+	 */
+	protected function storeTrackingNumber($orderId, $trackingNumber)
+	{
+		$this->ensureShipmentIdFieldExists();
+		$db = Factory::getContainer()->get(DatabaseInterface::class);
+		$query = $db->getQuery(true)
+			->update($db->quoteName('#__hikashop_order'))
+			->set($db->quoteName('inpost_tracking_number') . ' = ' . $db->quote($trackingNumber))
+			->where($db->quoteName('order_id') . ' = ' . (int)$orderId);
+		$db->setQuery($query);
+		$db->execute();
+	}
+
+	/**
+	 * Odpytuje ShipX o numer nadania z krótkim ponawianiem. InPost przydziela tracking_number
+	 * asynchronicznie (zwykle w ciągu ~1 s od utworzenia), więc kilka prób z krótką przerwą
+	 * pozwala pobrać go od razu po utworzeniu przesyłki - bez ręcznego odświeżania strony.
+	 * Zwraca numer nadania lub null, jeśli w danym czasie nie został jeszcze przydzielony.
+	 */
+	protected function fetchTrackingNumberWithRetry($shipmentId, $shippingParams, $maxAttempts = 4, $delayMs = 1200)
+	{
+		for ($i = 0; $i < $maxAttempts; $i++) {
+			$info = $this->callShipXApi('GET', '/v1/shipments/' . $shipmentId, null, $shippingParams);
+			if (is_object($info) && !empty($info->tracking_number)) {
+				return $info->tracking_number;
+			}
+			// Nie śpij po ostatniej próbie.
+			if ($i < $maxAttempts - 1) {
+				usleep($delayMs * 1000);
+			}
+		}
+		return null;
+	}
+
+	/**
+	 * Upewnia się że kolumny inpost_shipment_id i inpost_tracking_number istnieją
 	 */
 	protected function ensureShipmentIdFieldExists()
 	{
 		$db = Factory::getContainer()->get(DatabaseInterface::class);
 		$columns = $db->getTableColumns('#__hikashop_order');
-		
+
 		if (!isset($columns['inpost_shipment_id'])) {
 			$db->setQuery('ALTER TABLE ' . $db->quoteName('#__hikashop_order') . ' ADD ' . $db->quoteName('inpost_shipment_id') . ' VARCHAR(50) NULL');
+			$db->execute();
+		}
+
+		if (!isset($columns['inpost_tracking_number'])) {
+			$db->setQuery('ALTER TABLE ' . $db->quoteName('#__hikashop_order') . ' ADD ' . $db->quoteName('inpost_tracking_number') . ' VARCHAR(64) NULL');
 			$db->execute();
 		}
 	}
