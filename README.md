@@ -188,6 +188,17 @@ plg_inpost_hika/
 
 ## Changelog
 
+### v4.2.17 (2026-07-11)
+
+- **POPRAWKA: paczkomat nie pojawiał się w podsumowaniu zamówienia w panelu.** Pole
+  `inpost_locker` było tworzone bez `field_backend_listing = 1`, a to właśnie ta kolumna
+  (checkbox „Listing na zapleczu" w HikaShopie) decyduje, czy pole pokazuje się w sekcji
+  „Dodatkowe informacje" widoku zamówienia. Domyślnie `0`, więc paczkomat był zapisywany
+  poprawnie, ale niewidoczny. `ensureOrderFieldExists()` ustawia teraz tę flagę przy tworzeniu
+  pola i włącza ją na istniejącym polu, jeśli była wyłączona (uzupełnianie podpisu z 4.2.16
+  wykonywane w tym samym zapytaniu). Uwaga: to osobna kolumna `#__hikashop_field`, nie flaga
+  w `field_display`.
+
 ### v4.2.16 (2026-07-09)
 
 - **POPRAWKA: wiersz paczkomatu bez podpisu w „Dodatkowe informacje".** Pole zamówienia
