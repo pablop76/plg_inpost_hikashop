@@ -1,7 +1,7 @@
 <?php
 /**
  * @package     HikaShop InPost Paczkomaty Shipping Plugin
- * @version     4.2.17
+ * @version     4.2.16
  * @copyright   (C) 2026
  * @license     GNU/GPLv3 http://www.gnu.org/licenses/gpl-3.0.html
  */
@@ -1790,7 +1790,7 @@ class InpostHika extends \hikashopShippingPlugin
 		$db = Factory::getContainer()->get(DatabaseInterface::class);
 		
 		$query = $db->getQuery(true)
-			->select($db->quoteName(array('field_id', 'field_realname', 'field_backend_listing')))
+			->select($db->quoteName(array('field_id', 'field_realname')))
 			->from($db->quoteName('#__hikashop_field'))
 			->where($db->quoteName('field_namekey') . ' = ' . $db->quote($this->orderFieldName));
 		$db->setQuery($query);
@@ -1807,36 +1807,18 @@ class InpostHika extends \hikashopShippingPlugin
 			$field->field_required = 0;
 			$field->field_frontend = 1;
 			$field->field_backend = 1;
-			// field_backend_listing = wiersz pola w podsumowaniu zamówienia w panelu ("Dodatkowe
-			// informacje"). Bez tego (domyślnie 0) paczkomat nie pokazuje się w widoku zamówienia.
-			$field->field_backend_listing = 1;
 			$field->field_core = 0;
 			$field->field_access = 'all';
 			$field->field_display = ';front_order=1;invoice=0;mail_order_notif=1;';
 			$db->insertObject('#__hikashop_field', $field);
-		} else {
-			// Pole istnieje z wcześniejszej wersji - napraw jego "własne" ustawienia, jeśli trzeba.
+		} elseif (trim((string) $existingField->field_realname) === '') {
+			// Pole istnieje z wcześniejszej wersji, ale bez podpisu - wiersz paczkomatu
+			// w "Dodatkowe informacje" wyświetlał się bez etykiety. Uzupełniamy TYLKO gdy puste,
+			// żeby nie nadpisać nazwy, którą administrator mógł świadomie zmienić.
 			$update = new \stdClass();
 			$update->field_id = $existingField->field_id;
-			$needsUpdate = false;
-
-			// Podpis: uzupełniamy TYLKO gdy pusty, żeby nie nadpisać nazwy ustawionej świadomie
-			// przez administratora - wcześniej wiersz paczkomatu wyświetlał się bez etykiety.
-			if (trim((string) $existingField->field_realname) === '') {
-				$update->field_realname = Text::_('PLG_HIKASHOPSHIPPING_INPOST_HIKA_FIELD_LABEL');
-				$needsUpdate = true;
-			}
-
-			// Listing w panelu: włączamy gdy wyłączony - inaczej pole utworzone przez starszą wersję
-			// (bez tej kolumny = 0) jest niewidoczne w podsumowaniu zamówienia mimo zapisanej wartości.
-			if (empty($existingField->field_backend_listing)) {
-				$update->field_backend_listing = 1;
-				$needsUpdate = true;
-			}
-
-			if ($needsUpdate) {
-				$db->updateObject('#__hikashop_field', $update, 'field_id');
-			}
+			$update->field_realname = Text::_('PLG_HIKASHOPSHIPPING_INPOST_HIKA_FIELD_LABEL');
+			$db->updateObject('#__hikashop_field', $update, 'field_id');
 		}
 		
 		$columns = $db->getTableColumns('#__hikashop_order');
