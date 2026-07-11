@@ -1,7 +1,7 @@
 <?php
 /**
  * @package     HikaShop InPost Paczkomaty Shipping Plugin
- * @version     4.2.18
+ * @version     4.2.19
  * @copyright   (C) 2026
  * @license     GNU/GPLv3 http://www.gnu.org/licenses/gpl-3.0.html
  */
@@ -1821,7 +1821,7 @@ class InpostHika extends \hikashopShippingPlugin
 		$db = Factory::getContainer()->get(DatabaseInterface::class);
 		
 		$query = $db->getQuery(true)
-			->select($db->quoteName(array('field_id', 'field_realname', 'field_backend', 'field_published', 'field_table', 'field_display')))
+			->select($db->quoteName(array('field_id', 'field_realname', 'field_backend', 'field_backend_listing', 'field_published', 'field_table', 'field_display')))
 			->from($db->quoteName('#__hikashop_field'))
 			->where($db->quoteName('field_namekey') . ' = ' . $db->quote($this->orderFieldName));
 		$db->setQuery($query);
@@ -1846,6 +1846,10 @@ class InpostHika extends \hikashopShippingPlugin
 			$field->field_required = 0;
 			$field->field_frontcomp = 0;
 			$field->field_backend = 1;
+			// field_backend_listing = kolumna pola na LIŚCIE zamówień. Celowo 0: paczkomat ma się
+			// pokazywać w szczegółach zamówienia ("Dodatkowe informacje" = field_backend=1), a NIE
+			// jako osobna kolumna na liście (próba z field_backend_listing=1 została w v4.2.17 wycofana).
+			$field->field_backend_listing = 0;
 			$field->field_core = 0;
 			$field->field_access = 'all';
 			$field->field_display = ';front_order=1;invoice=0;mail_order_notif=1;';
@@ -1869,6 +1873,13 @@ class InpostHika extends \hikashopShippingPlugin
 
 			if ((int) $existingField->field_backend !== 1) {
 				$update->field_backend = 1;
+				$needsUpdate = true;
+			}
+			// Zdejmij paczkomat z LISTY zamówień, jeśli wcześniejsza wersja/konfiguracja go tam
+			// wstawiła (field_backend_listing=1). Miejsce docelowe to "Dodatkowe informacje"
+			// (field_backend), a nie osobna kolumna na liście.
+			if ((int) $existingField->field_backend_listing !== 0) {
+				$update->field_backend_listing = 0;
 				$needsUpdate = true;
 			}
 			if ((int) $existingField->field_published !== 1) {

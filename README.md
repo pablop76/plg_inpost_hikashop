@@ -188,6 +188,17 @@ plg_inpost_hika/
 
 ## Changelog
 
+### v4.2.19 (2026-07-11)
+
+- **POPRAWKA: paczkomat pokazywał się jako kolumna na LIŚCIE zamówień zamiast w „Dodatkowe
+  informacje".** Pole `inpost_locker` miało w bazie `field_backend_listing=1` (osobna kolumna na
+  liście zamówień) i `field_backend=0` (brak w szczegółach). To odwrotność tego, czego oczekujemy.
+  `ensureOrderFieldExists()` wymusza teraz deterministycznie **`field_backend=1`** (wiersz w
+  „Dodatkowe informacje" widoku zamówienia) oraz **`field_backend_listing=0`** (zdejmuje paczkomat
+  z listy zamówień) — zarówno przy zakładaniu pola, jak i w self-heal istniejącego wiersza. Próba
+  pokazywania paczkomatu na liście (`field_backend_listing`) była już raz wycofana w v4.2.17 —
+  teraz jest jawnie wyłączana.
+
 ### v4.2.18 (2026-07-11)
 
 - **POPRAWKA: paczkomat nadal nie pojawiał się w „Dodatkowe informacje" mimo istnienia pola.**
