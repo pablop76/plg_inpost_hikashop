@@ -1,7 +1,7 @@
 <?php
 /**
  * @package     HikaShop InPost Paczkomaty Shipping Plugin
- * @version     4.2.17
+ * @version     4.2.18
  * @copyright   (C) 2026
  * @license     GNU/GPLv3 http://www.gnu.org/licenses/gpl-3.0.html
  */
@@ -156,11 +156,17 @@ class InpostHika extends \hikashopShippingPlugin
 			return;
 		}
 		
-		// Upewnij się że kolumna shipment_id istnieje (tylko nie w emailu)
+		// Upewnij się że kolumny/pole istnieją (tylko nie w emailu)
 		if ($isAdmin) {
 			$this->ensureShipmentIdFieldExists();
+			// Pole HikaShop `inpost_locker` zakładaliśmy dotąd tylko na checkoucie i przy zapisie
+			// konfiguracji metody. Zakładamy je również, gdy admin po prostu otworzy zamówienie -
+			// dzięki temu wiersz paczkomatu pojawia się w natywnej sekcji "Dodatkowe informacje"
+			// (po jednym odświeżeniu) nawet na sklepie, na którym wcześniejsza, wadliwa wersja
+			// wtyczki nie zdążyła go poprawnie założyć.
+			$this->ensureOrderFieldExists();
 		}
-		
+
 		// Pobierz paczkomat z bazy (bo może nie być w obiekcie $order)
 		$locker = '';
 		if (!empty($order->inpost_locker)) {
@@ -175,7 +181,32 @@ class InpostHika extends \hikashopShippingPlugin
 			$db->setQuery($query);
 			$locker = $db->loadResult();
 		}
-		
+
+		// Backfill dla starszych zamówień: paczkomat bywa zapisany tylko w order_shipping_params,
+		// bo kolumna inpost_locker mogła nie istnieć w chwili składania zamówienia (patrz historia
+		// wersji z błędną nazwą kolumny field_frontend). Uzupełniamy kolumnę, żeby wartość pokazała
+		// się także w natywnej sekcji "Dodatkowe informacje". Czytamy WYŁĄCZNIE ze źródła powiązanego
+		// z tym zamówieniem (bez fallbacku do sesji), by nie przenieść przypadkiem cudzego wyboru.
+		if (empty($locker) && !empty($order->order_shipping_params)) {
+			$sp = $order->order_shipping_params;
+			if (is_string($sp)) {
+				$sp = @unserialize($sp);
+			}
+			if (is_object($sp) && !empty($sp->inpost_locker)) {
+				$locker = $sp->inpost_locker;
+				if ($isAdmin) {
+					$this->ensureOrderFieldExists();
+					$db = Factory::getContainer()->get(DatabaseInterface::class);
+					$backfill = $db->getQuery(true)
+						->update($db->quoteName('#__hikashop_order'))
+						->set($db->quoteName('inpost_locker') . ' = ' . $db->quote($locker))
+						->where($db->quoteName('order_id') . ' = ' . (int)$order->order_id);
+					$db->setQuery($backfill);
+					$db->execute();
+				}
+			}
+		}
+
 		if (empty($locker)) {
 			return;
 		}
@@ -1790,7 +1821,7 @@ class InpostHika extends \hikashopShippingPlugin
 		$db = Factory::getContainer()->get(DatabaseInterface::class);
 		
 		$query = $db->getQuery(true)
-			->select($db->quoteName(array('field_id', 'field_realname')))
+			->select($db->quoteName(array('field_id', 'field_realname', 'field_backend', 'field_published', 'field_table', 'field_display')))
 			->from($db->quoteName('#__hikashop_field'))
 			->where($db->quoteName('field_namekey') . ' = ' . $db->quote($this->orderFieldName));
 		$db->setQuery($query);
@@ -1825,14 +1856,41 @@ class InpostHika extends \hikashopShippingPlugin
 				// zamówienia, gdyby schemat #__hikashop_field różnił się w danej wersji HikaShopa.
 				$this->debug('insertObject pola inpost_locker nieudany', $e->getMessage());
 			}
-		} elseif (trim((string) $existingField->field_realname) === '') {
-			// Pole istnieje z wcześniejszej wersji, ale bez podpisu - wiersz paczkomatu
-			// w "Dodatkowe informacje" wyświetlał się bez etykiety. Uzupełniamy TYLKO gdy puste,
-			// żeby nie nadpisać nazwy, którą administrator mógł świadomie zmienić.
+		} else {
+			// Pole istnieje z wcześniejszej wersji - pogódź kluczowe flagi. Natywna sekcja
+			// "Dodatkowe informacje" w panelu pokazuje pola zamówienia tylko gdy field_backend=1
+			// oraz field_published=1 (HikaShop: getFields('backend', ...) filtruje po field_backend=1),
+			// a wcześniejsze wersje potrafiły zostawić wiersz w złym stanie. Dotychczasowy self-heal
+			// poprawiał TYLKO podpis - przez co paczkomat nadal się nie pojawiał. Podpisu
+			// (field_realname) nie nadpisujemy, gdy admin świadomie go zmienił - uzupełniamy tylko gdy pusty.
 			$update = new \stdClass();
 			$update->field_id = $existingField->field_id;
-			$update->field_realname = Text::_('PLG_HIKASHOPSHIPPING_INPOST_HIKA_FIELD_LABEL');
-			$db->updateObject('#__hikashop_field', $update, 'field_id');
+			$needsUpdate = false;
+
+			if ((int) $existingField->field_backend !== 1) {
+				$update->field_backend = 1;
+				$needsUpdate = true;
+			}
+			if ((int) $existingField->field_published !== 1) {
+				$update->field_published = 1;
+				$needsUpdate = true;
+			}
+			if ((string) $existingField->field_table !== 'order') {
+				$update->field_table = 'order';
+				$needsUpdate = true;
+			}
+			if (trim((string) $existingField->field_realname) === '') {
+				$update->field_realname = Text::_('PLG_HIKASHOPSHIPPING_INPOST_HIKA_FIELD_LABEL');
+				$needsUpdate = true;
+			}
+			if (trim((string) $existingField->field_display, '; ') === '') {
+				$update->field_display = ';front_order=1;invoice=0;mail_order_notif=1;';
+				$needsUpdate = true;
+			}
+
+			if ($needsUpdate) {
+				$db->updateObject('#__hikashop_field', $update, 'field_id');
+			}
 		}
 		
 		$columns = $db->getTableColumns('#__hikashop_order');

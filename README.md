@@ -188,6 +188,26 @@ plg_inpost_hika/
 
 ## Changelog
 
+### v4.2.18 (2026-07-11)
+
+- **POPRAWKA: paczkomat nadal nie pojawiał się w „Dodatkowe informacje" mimo istnienia pola.**
+  Trzy dopełniające się przyczyny zostały usunięte:
+  1. **Self-heal istniejącego pola poprawiał tylko podpis.** Gdy wiersz `inpost_locker` w
+     `#__hikashop_field` pozostał po starszej wersji w złym stanie, `ensureOrderFieldExists()`
+     naprawiał wyłącznie `field_realname`. Natywna sekcja „Dodatkowe informacje" pokazuje pola
+     zamówienia tylko gdy `field_backend=1` **i** `field_published=1` (HikaShop:
+     `getFields('backend', …)`), więc teraz godzimy również te flagi oraz `field_table`/`field_display`.
+  2. **Pole/kolumna zakładane tylko na checkoucie i przy zapisie konfiguracji.** Teraz
+     `ensureOrderFieldExists()` uruchamia się także przy samym otwarciu zamówienia w panelu —
+     wiersz pojawia się po jednym odświeżeniu, bez potrzeby ponownego składania zamówienia.
+  3. **Backfill starszych zamówień.** Jeśli kolumna `inpost_locker` jest pusta, a paczkomat jest
+     zapisany w `order_shipping_params` (zamówienia sprzed naprawy z v4.2.17), wartość jest
+     przepisywana do kolumny — dzięki temu widać ją też w „Dodatkowe informacje". Czytamy wyłącznie
+     ze źródła powiązanego z danym zamówieniem (bez fallbacku do sesji), by nie przenieść cudzego wyboru.
+- **Uwaga o edycji HikaShop:** natywne pola własne zamówień w panelu renderują się tylko na
+  HikaShop **Business** (`hikashop_level(2)`). Na darmowej/Starter „Dodatkowe informacje" nie
+  pokazują pól niestandardowych w ogóle — wtedy paczkomat widać wyłącznie przez własny box wtyczki.
+
 ### v4.2.17 (2026-07-11)
 
 - **POPRAWKA KRYTYCZNA: pole zamówienia `inpost_locker` w ogóle nie powstawało na nowszych
