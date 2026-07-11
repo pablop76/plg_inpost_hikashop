@@ -188,6 +188,15 @@ plg_inpost_hika/
 
 ## Changelog
 
+### v4.2.16 (2026-07-09)
+
+- **POPRAWKA: wiersz paczkomatu bez podpisu w „Dodatkowe informacje".** Pole zamówienia
+  `inpost_locker` było tworzone tylko przy pierwszej instalacji i nigdy potem nie aktualizowane —
+  instalacje, które dostały to pole bez `field_realname` (pusty podpis), pokazywały wybrany
+  paczkomat jako wiersz bez etykiety. `ensureOrderFieldExists()` uzupełnia teraz podpis na
+  „Paczkomat InPost", ale **tylko gdy jest pusty** — własna nazwa ustawiona przez administratora
+  nie jest nadpisywana.
+
 ### v4.2.15 (2026-07-09)
 
 - **POPRAWKA: logowanie debug w ogóle nie działało.** Log szedł do `JPATH_ROOT/logs`, katalogu

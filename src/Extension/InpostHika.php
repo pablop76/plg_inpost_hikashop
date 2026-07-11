@@ -1,7 +1,7 @@
 <?php
 /**
  * @package     HikaShop InPost Paczkomaty Shipping Plugin
- * @version     4.2.15
+ * @version     4.2.16
  * @copyright   (C) 2026
  * @license     GNU/GPLv3 http://www.gnu.org/licenses/gpl-3.0.html
  */
@@ -1790,12 +1790,13 @@ class InpostHika extends \hikashopShippingPlugin
 		$db = Factory::getContainer()->get(DatabaseInterface::class);
 		
 		$query = $db->getQuery(true)
-			->select('field_id')
+			->select($db->quoteName(array('field_id', 'field_realname')))
 			->from($db->quoteName('#__hikashop_field'))
 			->where($db->quoteName('field_namekey') . ' = ' . $db->quote($this->orderFieldName));
 		$db->setQuery($query);
-		
-		if (!$db->loadResult()) {
+		$existingField = $db->loadObject();
+
+		if (!$existingField) {
 			$field = new \stdClass();
 			$field->field_table = 'order';
 			$field->field_realname = Text::_('PLG_HIKASHOPSHIPPING_INPOST_HIKA_FIELD_LABEL');
@@ -1810,6 +1811,14 @@ class InpostHika extends \hikashopShippingPlugin
 			$field->field_access = 'all';
 			$field->field_display = ';front_order=1;invoice=0;mail_order_notif=1;';
 			$db->insertObject('#__hikashop_field', $field);
+		} elseif (trim((string) $existingField->field_realname) === '') {
+			// Pole istnieje z wcześniejszej wersji, ale bez podpisu - wiersz paczkomatu
+			// w "Dodatkowe informacje" wyświetlał się bez etykiety. Uzupełniamy TYLKO gdy puste,
+			// żeby nie nadpisać nazwy, którą administrator mógł świadomie zmienić.
+			$update = new \stdClass();
+			$update->field_id = $existingField->field_id;
+			$update->field_realname = Text::_('PLG_HIKASHOPSHIPPING_INPOST_HIKA_FIELD_LABEL');
+			$db->updateObject('#__hikashop_field', $update, 'field_id');
 		}
 		
 		$columns = $db->getTableColumns('#__hikashop_order');
