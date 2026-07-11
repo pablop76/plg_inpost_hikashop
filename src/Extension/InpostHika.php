@@ -1,7 +1,7 @@
 <?php
 /**
  * @package     HikaShop InPost Paczkomaty Shipping Plugin
- * @version     4.2.16
+ * @version     4.2.17
  * @copyright   (C) 2026
  * @license     GNU/GPLv3 http://www.gnu.org/licenses/gpl-3.0.html
  */
@@ -1797,20 +1797,34 @@ class InpostHika extends \hikashopShippingPlugin
 		$existingField = $db->loadObject();
 
 		if (!$existingField) {
+			// WAŻNE: nazwy kolumn MUSZĄ zgadzać się ze schematem `#__hikashop_field`.
+			// Kolumna „pole widoczne w komponencie na froncie" to `field_frontcomp`, NIE
+			// `field_frontend` — takiej kolumny HikaShop nie ma. Ustawienie jej powodowało
+			// błąd MySQL #1054 przy insertObject → CAŁY insert się nie wykonywał i pole nigdy
+			// nie powstawało (paczkomat widać było tylko przez nasz własny box, nie przez pole).
+			// `field_value` i `field_default` są NOT NULL bez wartości domyślnej → muszą być ustawione.
 			$field = new \stdClass();
 			$field->field_table = 'order';
 			$field->field_realname = Text::_('PLG_HIKASHOPSHIPPING_INPOST_HIKA_FIELD_LABEL');
 			$field->field_namekey = $this->orderFieldName;
 			$field->field_type = 'text';
+			$field->field_value = '';
+			$field->field_default = '';
 			$field->field_published = 1;
 			$field->field_ordering = 99;
 			$field->field_required = 0;
-			$field->field_frontend = 1;
+			$field->field_frontcomp = 0;
 			$field->field_backend = 1;
 			$field->field_core = 0;
 			$field->field_access = 'all';
 			$field->field_display = ';front_order=1;invoice=0;mail_order_notif=1;';
-			$db->insertObject('#__hikashop_field', $field);
+			try {
+				$db->insertObject('#__hikashop_field', $field);
+			} catch (\Exception $e) {
+				// Pole jest wygodą (paczkomat i tak pokazuje nasz box) - nie wywalaj widoku
+				// zamówienia, gdyby schemat #__hikashop_field różnił się w danej wersji HikaShopa.
+				$this->debug('insertObject pola inpost_locker nieudany', $e->getMessage());
+			}
 		} elseif (trim((string) $existingField->field_realname) === '') {
 			// Pole istnieje z wcześniejszej wersji, ale bez podpisu - wiersz paczkomatu
 			// w "Dodatkowe informacje" wyświetlał się bez etykiety. Uzupełniamy TYLKO gdy puste,

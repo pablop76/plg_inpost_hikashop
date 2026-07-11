@@ -188,6 +188,18 @@ plg_inpost_hika/
 
 ## Changelog
 
+### v4.2.17 (2026-07-11)
+
+- **POPRAWKA KRYTYCZNA: pole zamówienia `inpost_locker` w ogóle nie powstawało na nowszych
+  HikaShopach.** `ensureOrderFieldExists()` ustawiał nieistniejącą kolumnę `field_frontend`
+  (poprawna nazwa w schemacie `#__hikashop_field` to `field_frontcomp`), przez co `insertObject`
+  kończył się błędem MySQL #1054 i pole nigdy nie było tworzone. Paczkomat był widoczny tylko przez
+  własny box wtyczki (czyta go z sesji/koszyka), ale nie pojawiał się w sekcji „Dodatkowe
+  informacje" zamówienia. Dodatkowo ustawiane są teraz `field_value`/`field_default` (kolumny
+  `NOT NULL` bez wartości domyślnej — druga przyczyna błędu w trybie strict MySQL), a samo
+  tworzenie pola jest w `try/catch`, żeby ewentualna różnica schematu nie wywaliła widoku
+  zamówienia. Starsze HikaShopy miały jeszcze kolumnę `field_frontend`, stąd „kiedyś działało".
+
 ### v4.2.16 (2026-07-09)
 
 - **POPRAWKA: wiersz paczkomatu bez podpisu w „Dodatkowe informacje".** Pole zamówienia
