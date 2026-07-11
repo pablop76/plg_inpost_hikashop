@@ -188,6 +188,18 @@ plg_inpost_hika/
 
 ## Changelog
 
+### v4.2.20 (2026-07-11)
+
+- **ZMIANA: wtyczka nie nadpisuje już ręcznych ustawień wyświetlania pola.** Poprzednie wersje przy
+  KAŻDYM otwarciu zamówienia wymuszały flagi pola `inpost_locker` (m.in. „Listing" =
+  `field_backend_listing`), przez co ręczne zmiany w edytorze pól HikaShop „same się cofały".
+  Teraz flagi wyświetlania ustawiane są **wyłącznie przy pierwszym zakładaniu pola**, a istniejącego
+  pola self-heal już nie rusza (uzupełnia tylko puste podpis/strefy front-endu). Administrator ma
+  pełną kontrolę: może dowolnie zaznaczać/odznaczać „Listing" i „Backend", a wtyczka to uszanuje.
+- **Domyślnie po instalacji „Listing" jest włączony** (`field_backend_listing=1`) — paczkomat pokazuje
+  się i w „Dodatkowe informacje", i jako kolumna na liście zamówień. To tylko ustawienie startowe;
+  można je odznaczyć na stałe.
+
 ### v4.2.19 (2026-07-11)
 
 - **POPRAWKA: paczkomat pokazywał się jako kolumna na LIŚCIE zamówień zamiast w „Dodatkowe
