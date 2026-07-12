@@ -7,14 +7,14 @@
         <type>plugin</type>
         <client>site</client>
         <folder>hikashopshipping</folder>
-        <version>4.2.20</version>
+        <version>4.2.21</version>
         <infourl title="InPost Paczkomaty">https://github.com/pablop76/plg_inpost_hikashop</infourl>
         <targetplatform name="joomla" version="(4|5|6)\.[0-9]+"/>
         <php_minimum>8.1.0</php_minimum>
         <downloads>
-            <downloadurl type="full" format="zip">https://github.com/pablop76/plg_inpost_hikashop/releases/download/v4.2.20/plg_inpost_hikashop-4.2.20.zip</downloadurl>
+            <downloadurl type="full" format="zip">https://github.com/pablop76/plg_inpost_hikashop/releases/download/v4.2.21/plg_inpost_hikashop-4.2.21.zip</downloadurl>
         </downloads>
-        <sha256>d1e395f3fed9774b1ebd23a72e7969300ad5dc94e01b812dbd4a7258bba6f4d3</sha256>
+        <sha256>4b836b11ab60e45343ea2eee1bf4c8e8a8011acc238e1c44ac5030cf897951f6</sha256>
         <tags>
             <tag>stable</tag>
         </tags>
