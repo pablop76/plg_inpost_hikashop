@@ -220,6 +220,24 @@ plg_inpost_hika/
 
 ## Changelog
 
+### v4.2.21 (2026-07-12)
+
+- **NAPRAWA WŁAŚCIWEJ PRZYCZYNY: paczkomat nie pojawiał się w „Dodatkowe informacje" zamówienia,
+  choć widać go było na LIŚCIE zamówień.** Wcześniejsze próby (v4.2.17/4.2.19/4.2.20) szukały winy
+  w złych dźwigniach (`field_backend` / `field_backend_listing`). Faktyczna przyczyna: przy
+  zakładaniu pola `inpost_locker` zostawialiśmy kolumny **`field_categories` i `field_products`
+  jako `NULL`**. Pobierając pola dla widoku pojedynczego zamówienia HikaShop wylicza kategorie z
+  produktów zamówienia i włącza filtr kategorii (`field_categories = 'all' OR '' OR ... LIKE`);
+  `NULL` nie spełnia żadnego z tych warunków, więc pole wypadało z „Dodatkowych informacji" (na
+  liście zamówień HikaShop pyta bez obiektu zamówienia, więc filtr się nie uruchamia i pole tam
+  było widoczne — stąd mylący objaw). Pole zaczynało działać dopiero po ręcznym zapisaniu w
+  edytorze pól HikaShop, bo edytor ustawiał `field_categories = 'all'`.
+- `ensureOrderFieldExists()` ustawia teraz przy zakładaniu pola **`field_categories = 'all'`,
+  `field_products = ''`, `field_with_sub_categories = 0`** (dokładnie jak pola tworzone natywnie
+  przez HikaShop), a istniejące wiersze z `NULL` **samonaprawia** (bez ruszania ręcznie ustawionej
+  listy kategorii). Dzięki temu na czystej instalacji paczkomat pokazuje się w „Dodatkowe
+  informacje" od razu, bez żadnej ręcznej ingerencji.
+
 ### v4.2.20 (2026-07-11)
 
 - **ZMIANA: wtyczka nie nadpisuje już ręcznych ustawień wyświetlania pola.** Poprzednie wersje przy

@@ -2,12 +2,12 @@
 <extension type="plugin" group="hikashopshipping" method="upgrade">
 	<name>PLG_HIKASHOPSHIPPING_INPOST_HIKA</name>
 	<author>Paweł Półtoraczyk</author>
-	<creationDate>2026-07-11</creationDate>
+	<creationDate>2026-07-12</creationDate>
 	<copyright>(C) 2026</copyright>
 	<license>GNU/GPLv3 http://www.gnu.org/licenses/gpl-3.0.html</license>
 	<authorEmail>kontakt@web-service.com.pl</authorEmail>
 	<authorUrl>https://web-service.com.pl</authorUrl>
-	<version>4.2.20</version>
+	<version>4.2.21</version>
 	<description>PLG_HIKASHOPSHIPPING_INPOST_HIKA_DESC</description>
 
 	<namespace path="src">Pablop76\Plugin\HikashopShipping\InpostHika</namespace>

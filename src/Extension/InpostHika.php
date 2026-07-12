@@ -1,7 +1,7 @@
 <?php
 /**
  * @package     HikaShop InPost Paczkomaty Shipping Plugin
- * @version     4.2.20
+ * @version     4.2.21
  * @copyright   (C) 2026
  * @license     GNU/GPLv3 http://www.gnu.org/licenses/gpl-3.0.html
  */
@@ -1821,7 +1821,7 @@ class InpostHika extends \hikashopShippingPlugin
 		$db = Factory::getContainer()->get(DatabaseInterface::class);
 		
 		$query = $db->getQuery(true)
-			->select($db->quoteName(array('field_id', 'field_realname', 'field_display')))
+			->select($db->quoteName(array('field_id', 'field_realname', 'field_display', 'field_categories', 'field_products')))
 			->from($db->quoteName('#__hikashop_field'))
 			->where($db->quoteName('field_namekey') . ' = ' . $db->quote($this->orderFieldName));
 		$db->setQuery($query);
@@ -1854,6 +1854,18 @@ class InpostHika extends \hikashopShippingPlugin
 			$field->field_backend_listing = 1;
 			$field->field_core = 0;
 			$field->field_access = 'all';
+			// KLUCZOWE dla widoczności w "Dodatkowe informacje": HikaShop, pobierając pola
+			// zamówienia dla widoku pojedynczego zamówienia (getFields('backend', $order, 'order')),
+			// wylicza kategorie z PRODUKTÓW tego zamówienia i włącza filtr kategorii. Wtedy w
+			// zapytaniu jest warunek `field_categories = 'all' OR field_categories = '' OR ... LIKE`
+			// oraz analogicznie `field_products = '' OR ... LIKE`. Kolumny te są NULLowalne, więc
+			// pominięcie ich zostawia NULL, a `NULL = 'all'`/`NULL = ''` jest w SQL fałszem → pole
+			// wypada z "Dodatkowych informacji" (choć nadal widać je na LIŚCIE zamówień, bo tam
+			// HikaShop pyta bez obiektu zamówienia, więc filtr kategorii się nie uruchamia). Dlatego
+			// MUSZĄ to być 'all' / '' (a nie NULL), dokładnie jak w polach zakładanych przez HikaShop.
+			$field->field_categories = 'all';
+			$field->field_with_sub_categories = 0;
+			$field->field_products = '';
 			$field->field_display = ';front_order=1;invoice=0;mail_order_notif=1;';
 			try {
 				$db->insertObject('#__hikashop_field', $field);
@@ -1879,6 +1891,19 @@ class InpostHika extends \hikashopShippingPlugin
 			}
 			if (trim((string) $existingField->field_display, '; ') === '') {
 				$update->field_display = ';front_order=1;invoice=0;mail_order_notif=1;';
+				$needsUpdate = true;
+			}
+			// Samonaprawa pól założonych przez wcześniejsze wersje wtyczki, które zostawiały
+			// field_categories/field_products jako NULL. NULL to nie jest świadomy wybór admina
+			// (edytor pól HikaShop zawsze zapisuje 'all' albo listę kategorii / ''), a powoduje, że
+			// pole znika z "Dodatkowych informacji" zamówienia (patrz komentarz przy insercie wyżej).
+			// Naprawiamy WYŁĄCZNIE wartość NULL - listy kategorii ustawionej ręcznie nie ruszamy.
+			if ($existingField->field_categories === null) {
+				$update->field_categories = 'all';
+				$needsUpdate = true;
+			}
+			if ($existingField->field_products === null) {
+				$update->field_products = '';
 				$needsUpdate = true;
 			}
 
