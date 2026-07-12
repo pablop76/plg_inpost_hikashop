@@ -141,6 +141,38 @@ Plugin wysyłkowy dla HikaShop (Joomla 4/5/6) integrujący InPost Paczkomaty z m
 | Średnia (B) | 380 x 640 x 190 mm    | 25 kg    |
 | Duża (C)    | 410 x 380 x 640 mm    | 25 kg    |
 
+## Wyświetlanie paczkomatu w panelu admina
+
+Wybrany paczkomat pokazuje się w panelu admina na **dwa niezależne sposoby**:
+
+### 1. Własny box wtyczki (działa na każdej edycji HikaShop)
+
+W szczegółach zamówienia, pod listą produktów, wtyczka rysuje własną ramkę z nazwą wybranego
+paczkomatu. Renderuje ją zdarzenie `onAfterOrderProductsListingDisplay`, więc jest widoczna
+**niezależnie od edycji HikaShop** (także na darmowej/Starter) i nie wymaga żadnej konfiguracji.
+
+### 2. Pole zamówienia `inpost_locker` (sekcja „Dodatkowe informacje")
+
+Wtyczka automatycznie zakłada pole własne zamówienia `inpost_locker` w tabeli `#__hikashop_field`.
+O tym, gdzie HikaShop je pokazuje, decydują dwa przełączniki w edytorze pola
+(**Komponenty → HikaShop → Wyświetlanie → Pola**):
+
+| Ustawienie pola HikaShop | Kolumna w bazie         | Gdzie widać paczkomat                          |
+| ------------------------ | ----------------------- | ---------------------------------------------- |
+| **Backend**              | `field_backend`         | Wiersz w sekcji „Dodatkowe informacje" zamówienia |
+| **Listing**              | `field_backend_listing` | Osobna kolumna na **liście** zamówień          |
+
+- ⚠️ **Natywna sekcja „Dodatkowe informacje" renderuje pola własne tylko na HikaShop Business**
+  (`hikashop_level(2)`). Na darmowej/Starter ta sekcja w ogóle nie pokazuje pól niestandardowych —
+  wtedy paczkomat widać wyłącznie przez własny box wtyczki (punkt 1). Kolumna na liście zamówień
+  (**Listing**) działa na każdej edycji.
+- **Po instalacji „Listing" jest domyślnie włączony** (`field_backend_listing=1`) razem z „Backend",
+  więc paczkomat pokazuje się od razu i w szczegółach, i jako kolumna na liście.
+- **To tylko ustawienie startowe.** Możesz w edytorze pola dowolnie zaznaczać/odznaczać „Listing"
+  i „Backend" — wtyczka **nie nadpisuje ręcznych zmian**. Flagi wyświetlania ustawiane są
+  wyłącznie przy pierwszym zakładaniu pola; potem self-heal jedynie uzupełnia pusty podpis pola,
+  nie ruszając Twoich ustawień. Jeśli więc odznaczysz „Listing", zostanie odznaczony na stałe.
+
 ## Tryb Debug
 
 Plugin obsługuje dwa rodzaje debugowania:
