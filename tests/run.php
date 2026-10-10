@@ -619,6 +619,79 @@ foreach (['pl-PL', 'en-GB'] as $jezyk) {
     wynik('plik ' . $jezyk . ' ma wszystkie teksty używane w kodzie', $braki === [], implode(', ', $braki));
 }
 
+// --- 7. Serwer aktualizacji ------------------------------------------------
+
+naglowek('7. Serwer aktualizacji, którego HikaShop nie przejmie');
+
+// HikaShop uznaje za własny pierwszy serwer aktualizacji typu „extension”, którego adres
+// zawiera słowo „hikashop”, i nadpisuje mu adres (helpers/update.php, addUpdateSite()).
+$adresSerwera = trim((string) $manifest->updateservers->server);
+
+wynik('manifest podaje serwer aktualizacji', str_starts_with($adresSerwera, 'https://'), $adresSerwera);
+wynik('adres serwera aktualizacji nie zawiera dosłownie słowa „hikashop”', stripos($adresSerwera, 'hikashop') === false, $adresSerwera);
+
+try {
+    $odpowiedz = Joomla\CMS\Http\HttpFactory::getHttp()->get($adresSerwera, [], 20);
+    $plikAkt   = @simplexml_load_string((string) $odpowiedz->getBody());
+
+    wynik(
+        'pod tym adresem jest plik aktualizacji tej wtyczki',
+        $odpowiedz->getStatusCode() === 200 && $plikAkt !== false && (string) $plikAkt->update->element === 'inpost_hika',
+        'HTTP ' . $odpowiedz->getStatusCode()
+    );
+} catch (Throwable $blad) {
+    echo '  POMINIĘTE pod tym adresem jest plik aktualizacji tej wtyczki (brak sieci: ' . $blad->getMessage() . ')' . PHP_EOL;
+}
+
+$idWtyczki   = (int) $pdo->query("SELECT extension_id FROM {$prefix}extensions WHERE type = 'plugin' AND folder = 'hikashopshipping' AND element = 'inpost_hika'")->fetchColumn();
+$idHikashopa = (int) $pdo->query("SELECT extension_id FROM {$prefix}extensions WHERE type = 'component' AND element = 'com_hikashop'")->fetchColumn();
+
+$serweryWtyczki = $pdo->query("
+    SELECT s.update_site_id, s.location,
+           (SELECT COUNT(*) FROM {$prefix}update_sites_extensions x WHERE x.update_site_id = s.update_site_id AND x.extension_id = {$idHikashopa}) AS wspolny
+    FROM {$prefix}update_sites s
+    JOIN {$prefix}update_sites_extensions p ON p.update_site_id = s.update_site_id
+    WHERE p.extension_id = {$idWtyczki}
+")->fetchAll(PDO::FETCH_ASSOC);
+
+wynik('zainstalowana wtyczka ma jeden serwer aktualizacji z adresem z manifestu', count($serweryWtyczki) === 1 && ($serweryWtyczki[0]['location'] ?? '') === $adresSerwera, json_encode($serweryWtyczki));
+wynik('serwer wtyczki nie jest współdzielony z komponentem HikaShop', count($serweryWtyczki) === 1 && (int) $serweryWtyczki[0]['wspolny'] === 0);
+
+$wybranyPrzezHikashop = (int) $pdo->query("SELECT update_site_id FROM {$prefix}update_sites WHERE location LIKE '%hikashop%' AND type LIKE 'extension' LIMIT 1")->fetchColumn();
+wynik('zapytanie, którym HikaShop szuka swojego serwera, nie trafia w serwer wtyczki', !in_array($wybranyPrzezHikashop, array_map(static fn ($s) => (int) $s['update_site_id'], $serweryWtyczki), true), 'trafia w ' . $wybranyPrzezHikashop);
+
+// Stan zastany na starszych sklepach: wtyczka przypisana do serwera, do którego HikaShop
+// dopiął swój komponent. Skrypt instalacyjny ma ją od niego odpiąć i nic więcej.
+require_once __DIR__ . '/../script.php';
+
+$pdo->prepare("INSERT INTO {$prefix}update_sites (name, type, location, enabled) VALUES ('Hikashop TEST', 'extension', :a, 0)")
+    ->execute([':a' => 'https://example.invalid/' . $znacznik . '/przejety.xml']);
+$przejety = (int) $pdo->lastInsertId();
+
+$pdo->prepare("INSERT INTO {$prefix}update_sites (name, type, location, enabled) VALUES ('InPost TEST', 'extension', :a, 0)")
+    ->execute([':a' => 'https://example.invalid/' . $znacznik . '/wlasny.xml']);
+$wlasny = (int) $pdo->lastInsertId();
+
+$pdo->exec("INSERT INTO {$prefix}update_sites_extensions (update_site_id, extension_id) VALUES ({$przejety}, {$idHikashopa}), ({$przejety}, {$idWtyczki}), ({$wlasny}, {$idWtyczki})");
+
+register_shutdown_function(static function () use ($pdo, $prefix, $przejety, $wlasny): void {
+    $pdo->exec("DELETE FROM {$prefix}update_sites_extensions WHERE update_site_id IN ({$przejety}, {$wlasny})");
+    $pdo->exec("DELETE FROM {$prefix}update_sites WHERE update_site_id IN ({$przejety}, {$wlasny})");
+});
+
+$powiazany = static function (int $serwer, int $rozszerzenie) use ($pdo, $prefix): bool {
+    return (int) $pdo->query("SELECT COUNT(*) FROM {$prefix}update_sites_extensions WHERE update_site_id = {$serwer} AND extension_id = {$rozszerzenie}")->fetchColumn() === 1;
+};
+
+$skrypt  = new PlgHikashopshippingInpost_hikaInstallerScript();
+$odpiete = $skrypt->detachFromSharedUpdateSite();
+
+wynik('skrypt odpina wtyczkę od serwera przejętego przez HikaShop', $odpiete === 1 && !$powiazany($przejety, $idWtyczki), 'odpięte: ' . $odpiete);
+wynik('przejęty serwer i powiązanie HikaShopa zostają', $powiazany($przejety, $idHikashopa) && (int) $pdo->query("SELECT COUNT(*) FROM {$prefix}update_sites WHERE update_site_id = {$przejety}")->fetchColumn() === 1);
+wynik('własny serwer wtyczki zostaje przypisany', $powiazany($wlasny, $idWtyczki));
+wynik('drugie uruchomienie skryptu niczego już nie zmienia', $skrypt->detachFromSharedUpdateSite() === 0 && $powiazany($wlasny, $idWtyczki));
+wynik('przed odinstalowaniem skrypt niczego nie rusza', $skrypt->preflight('uninstall', null) === true && $powiazany($wlasny, $idWtyczki));
+
 // --- podsumowanie ---------------------------------------------------------
 
 echo PHP_EOL . 'Zdane: ' . $zdane . ', błędy: ' . $bledy . PHP_EOL;

@@ -46,6 +46,14 @@ Plugin wysyłkowy dla HikaShop (Joomla 4/5/6) integrujący InPost Paczkomaty z m
 3. Wgraj plik ZIP
 4. Włącz plugin: **System → Wtyczki → InPost Paczkomaty**
 
+## Aktualizacje
+
+Wtyczka zgłasza się do serwera aktualizacji Joomli, więc nowe wersje pojawiają się w **System → Aktualizacje → Rozszerzenia**.
+
+**Jeśli sklep z wersją 4.2.22 lub starszą nie widzi aktualizacji**, zainstaluj najnowszą paczkę ręcznie, jeden raz. Przyczyna leży po stronie HikaShopa: przy każdej swojej aktualizacji szuka on „własnego” serwera aktualizacji po słowie „hikashop” w adresie i pierwszemu trafieniu nadpisuje adres swoim. W starszych instalacjach HikaShopa pierwszym trafieniem bywał serwer tej wtyczki (jej repozytorium ma to słowo w nazwie) i Joomla przestawała pytać o jej aktualizacje.
+
+Od 4.2.23 adres serwera aktualizacji w manifeście nie zawiera tego słowa dosłownie (`%68ikashop`, GitHub oddaje ten sam plik), a skrypt instalacyjny odpina wtyczkę od serwera przejętego wcześniej przez HikaShop i Joomla zakłada jej własny.
+
 ## Konfiguracja
 
 1. Przejdź do **Komponenty → HikaShop → Konfiguracja → Wysyłka**
@@ -224,6 +232,7 @@ Testy chodzą po prawdziwej instalacji Joomli z HikaShopem (ścieżka w zmiennej
 plg_inpost_hika/
 ├── inpost_hika.php          # Legacy entry point
 ├── inpost_hika.xml          # Manifest instalacyjny
+├── script.php               # Skrypt instalacyjny (porządkuje serwer aktualizacji)
 ├── index.html               # Plik bezpieczeństwa
 ├── services/
 │   └── provider.php         # Service Provider (Joomla 5/6)

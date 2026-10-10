@@ -7,10 +7,12 @@
 	<license>GNU/GPLv3 http://www.gnu.org/licenses/gpl-3.0.html</license>
 	<authorEmail>kontakt@web-service.com.pl</authorEmail>
 	<authorUrl>https://web-service.com.pl</authorUrl>
-	<version>4.2.22</version>
+	<version>4.2.23</version>
 	<description>PLG_HIKASHOPSHIPPING_INPOST_HIKA_DESC</description>
 
 	<namespace path="src">Pablop76\Plugin\HikashopShipping\InpostHika</namespace>
+
+	<scriptfile>script.php</scriptfile>
 
 	<files>
 		<filename plugin="inpost_hika">inpost_hika.php</filename>
@@ -45,8 +47,13 @@
 		</fields>
 	</config>
 
+	<!--
+		Adres serwera aktualizacji celowo nie zawiera doslownego slowa "hikashop"
+		(litera h jest zapisana jako %68, GitHub oddaje ten sam plik). HikaShop przy swojej
+		aktualizacji nadpisuje adres pierwszego serwera aktualizacji, ktory ma to slowo
+		w adresie, i Joomla przestawala widziec aktualizacje wtyczki. Patrz script.php.
+	-->
 	<updateservers>
-		<server type="extension" name="InPost Paczkomaty Shipping Plugin Updates">
-			https://raw.githubusercontent.com/pablop76/plg_inpost_hikashop/release/updates.xml</server>
+		<server type="extension" name="InPost Paczkomaty Shipping Plugin Updates">https://raw.githubusercontent.com/pablop76/plg_inpost_%68ikashop/release/updates.xml</server>
 	</updateservers>
 </extension>
