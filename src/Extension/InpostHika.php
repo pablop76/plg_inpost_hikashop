@@ -1,7 +1,7 @@
 <?php
 /**
  * @package     HikaShop InPost Paczkomaty Shipping Plugin
- * @version     4.2.21
+ * @version     4.2.22
  * @copyright   (C) 2026
  * @license     GNU/GPLv3 http://www.gnu.org/licenses/gpl-3.0.html
  */
@@ -49,6 +49,14 @@ class InpostHika extends \hikashopShippingPlugin
 	const SHIPX_API_URL = 'https://api-shipx-pl.easypack24.net';
 	// ShipX API - Sandbox
 	const SHIPX_API_URL_SANDBOX = 'https://sandbox-api-shipx-pl.easypack24.net';
+
+	// Rezerwacja zapisywana w kolumnie inpost_shipment_id na czas tworzenia przesyłki,
+	// w postaci "pending:<znacznik czasu>". Patrz claimShipmentSlot().
+	const PENDING_PREFIX = 'pending:';
+
+	// Dziennik debug: chroniony plik .php (patrz resolveDebugLogPath()) i nazwa sprzed 4.2.22.
+	const DEBUG_LOG_FILE = 'inpost_hika_debug.php';
+	const DEBUG_LOG_FILE_LEGACY = 'inpost_hika_debug.log';
 
 	public $multiple = true;
 	public $name = 'inpost_hika';
@@ -144,18 +152,19 @@ class InpostHika extends \hikashopShippingPlugin
 		
 		// Sprawdź czy to admin
 		$app = Factory::getApplication();
-		$isAdmin = $app->isClient('administrator') && !$isEmail;
-		
-		// Obsługa akcji AJAX w adminie (tworzenie przesyłki, pobieranie etykiety) - PRZED wyświetlaniem
-		if ($isAdmin) {
-			$this->handleAdminAjaxActions($order);
-		}
-		
+		$isAdmin = $this->isAdminContext() && !$isEmail;
+
+		// Panel ShipX i jego akcje należą wyłącznie do widoku zamówienia na zapleczu.
+		// Ten sam punkt zaczepienia HikaShop wywołuje też przy wydruku faktury
+		// (order_back_invoice): tam zostaje sama ramka z paczkomatem, bez przycisków
+		// i bez pytania API InPost przy każdym otwarciu faktury.
+		$showShipx = $isAdmin && $type === 'order_back_show';
+
 		// Sprawdź czy zamówienie ma metodę InPost
 		if (empty($order->order_shipping_method) || $order->order_shipping_method !== $this->name) {
 			return;
 		}
-		
+
 		// Upewnij się że kolumny/pole istnieją (tylko nie w emailu)
 		if ($isAdmin) {
 			$this->ensureShipmentIdFieldExists();
@@ -165,6 +174,14 @@ class InpostHika extends \hikashopShippingPlugin
 			// (po jednym odświeżeniu) nawet na sklepie, na którym wcześniejsza, wadliwa wersja
 			// wtyczki nie zdążyła go poprawnie założyć.
 			$this->ensureOrderFieldExists();
+		}
+
+		// Akcje zaplecza (tworzenie przesyłki, etykieta) - przed wyświetlaniem, ale dopiero
+		// po upewnieniu się, że to zamówienie z dostawą InPost. Wcześniej stały przed tym
+		// sprawdzeniem, więc spreparowane żądanie mogło utworzyć przesyłkę dla zamówienia
+		// z zupełnie inną metodą dostawy.
+		if ($showShipx) {
+			$this->handleAdminAjaxActions($order);
 		}
 
 		// Pobierz paczkomat z bazy (bo może nie być w obiekcie $order)
@@ -226,9 +243,9 @@ class InpostHika extends \hikashopShippingPlugin
 		echo '</div>';
 		
 
-		   // Sekcja ShipX API - TYLKO DLA ADMINA i NIE dla emaili
-		   if (!$isAdmin) {
-			   return; // Email/klient widzi tylko paczkomat, nie widzi sekcji ShipX
+		   // Sekcja ShipX API - TYLKO w widoku zamówienia na zapleczu
+		   if (!$showShipx) {
+			   return; // Email, klient i faktura: tylko paczkomat, bez sekcji ShipX
 		   }
 
 
@@ -281,7 +298,28 @@ class InpostHika extends \hikashopShippingPlugin
 				. '</small><br>';
 		}
 
-		if (!empty($shipmentId)) {
+		if ($this->isPendingClaim($shipmentId)) {
+			// Tworzenie przesyłki ruszyło, ale wtyczka nie dostała odpowiedzi InPost (albo żądanie
+			// zostało przerwane). Nie wiemy, czy przesyłka powstała, więc nie pokazujemy od razu
+			// przycisku „Utwórz przesyłkę”: kolejne kliknięcie mogłoby założyć drugą, płatną.
+			$since = $this->pendingClaimTime($shipmentId);
+			echo '<div style="background:#fff3cd; border:2px solid #ffc107; padding:12px; margin:10px 0; border-radius:6px; color:#856404;">';
+			echo '<strong>⚠️ ' . Text::_('PLG_HIKASHOPSHIPPING_INPOST_HIKA_PENDING_TITLE') . '</strong><br>';
+			echo Text::sprintf(
+				'PLG_HIKASHOPSHIPPING_INPOST_HIKA_PENDING_INFO',
+				htmlspecialchars($since > 0 ? date('Y-m-d H:i:s', $since) : '?'),
+				(int)$order->order_id
+			);
+			echo '</div>';
+			echo '<form method="post" style="display:inline-block; margin-top:5px;">';
+			echo '<input type="hidden" name="inpost_action" value="release_pending" />';
+			echo '<input type="hidden" name="order_id" value="' . (int)$order->order_id . '" />';
+			echo HTMLHelper::_('form.token');
+			echo '<button type="submit" class="btn btn-small btn-warning" style="background:#ffc107; color:#333; padding:8px 15px; border-radius:4px; border:none; cursor:pointer;">';
+			echo '🔓 ' . Text::_('PLG_HIKASHOPSHIPPING_INPOST_HIKA_PENDING_RELEASE');
+			echo '</button>';
+			echo '</form>';
+		} elseif (!empty($shipmentId)) {
 			// Przesyłka już utworzona - sprawdź jej status (informacyjnie)
 			$shipmentInfo = $this->callShipXApi('GET', '/v1/shipments/' . $shipmentId, null, $shippingParams);
 			$shipmentStatus = $shipmentInfo->status ?? 'unknown';
@@ -350,10 +388,14 @@ class InpostHika extends \hikashopShippingPlugin
 			// utworzyć nową (np. inny rozmiar/paczkomat). Z potwierdzeniem, bo anuluje przesyłkę.
 			// UWAGA: przesyłki confirmed InPost nie pozwala anulować (reguła biznesowa) - wtedy
 			// cancel się nie powiedzie, ale lokalne ID i tak zostanie wyczyszczone.
-			$confirmMsg = addslashes('Utworzenie nowej przesyłki najpierw spróbuje anulować obecną '
-				. '(ID: ' . $shipmentId . ') w InPost. Kontynuować?');
+			// InPost pozwala anulować przesyłkę tylko przed jej potwierdzeniem. Mówimy to PRZED
+			// kliknięciem, a nie po fakcie: przy przesyłce już potwierdzonej „Utwórz ponownie”
+			// oznacza drugą, osobno płatną przesyłkę.
+			$confirmMsg = $this->isCancellableStatus($shipmentStatus)
+				? Text::sprintf('PLG_HIKASHOPSHIPPING_INPOST_HIKA_RECREATE_CONFIRM', $shipmentId)
+				: Text::sprintf('PLG_HIKASHOPSHIPPING_INPOST_HIKA_RECREATE_CONFIRM_PAID', $shipmentId, $shipmentStatus);
 			echo '<form method="post" style="display:inline-block; margin-top:10px; margin-right:10px;" '
-				. 'onsubmit="return confirm(\'' . $confirmMsg . '\');">';
+				. 'onsubmit="return confirm(' . htmlspecialchars(json_encode($confirmMsg), ENT_QUOTES, 'UTF-8') . ');">';
 			echo '<input type="hidden" name="inpost_action" value="recreate_shipment" />';
 			echo '<input type="hidden" name="order_id" value="' . (int)$order->order_id . '" />';
 			echo '<input type="hidden" name="locker_name" value="' . htmlspecialchars($lockerCode) . '" />';
@@ -409,8 +451,122 @@ class InpostHika extends \hikashopShippingPlugin
 				echo '<span style="color:#dc3545;">⚠️ ' . Text::_('PLG_HIKASHOPSHIPPING_INPOST_HIKA_API_NOT_CONFIGURED') . '</span>';
 			}
 		}
+		// Jedno zamknięcie: panel ShipX. Wcześniej stały tu dwa i drugie zamykało kontener
+		// strony zamówienia HikaShopa, przez co dalsze sekcje (historia) wypadały z układu.
 		echo '</div>';
-		echo '</div>';
+	}
+
+	/**
+	 * Czy jesteśmy w panelu administracyjnym. Osobna metoda, żeby testy mogły
+	 * sprawdzić widok zaplecza bez uruchamiania aplikacji administratora.
+	 */
+	protected function isAdminContext()
+	{
+		return Factory::getApplication()->isClient('administrator');
+	}
+
+	/**
+	 * Wraca na stronę zamówienia w zapleczu.
+	 */
+	protected function redirectToOrder($orderId)
+	{
+		$redirectUrl = 'index.php?option=com_hikashop&ctrl=order&task=edit&cid=' . (int)$orderId;
+		Factory::getApplication()->redirect(Route::_($redirectUrl, false));
+	}
+
+	/**
+	 * Statusy, w których InPost pozwala anulować przesyłkę (DELETE /v1/shipments/{id}).
+	 * Od `confirmed` wzwyż przesyłka jest opłacona i anulować jej się nie da.
+	 */
+	protected function isCancellableStatus($status)
+	{
+		return in_array((string)$status, array('created', 'offers_prepared', 'offer_selected'), true);
+	}
+
+	/**
+	 * Czy w kolumnie inpost_shipment_id stoi rezerwacja zamiast numeru przesyłki.
+	 */
+	protected function isPendingClaim($shipmentId)
+	{
+		return is_string($shipmentId) && strpos($shipmentId, self::PENDING_PREFIX) === 0;
+	}
+
+	/**
+	 * Chwila założenia rezerwacji (znacznik czasu) albo 0.
+	 */
+	protected function pendingClaimTime($shipmentId)
+	{
+		return $this->isPendingClaim($shipmentId) ? (int)substr($shipmentId, strlen(self::PENDING_PREFIX)) : 0;
+	}
+
+	/**
+	 * Rezerwuje zamówienie na czas tworzenia przesyłki.
+	 *
+	 * Samo sprawdzenie „czy jest już numer przesyłki” nie wystarcza: dwa żądania wysłane
+	 * jedno po drugim (podwójne kliknięcie) czytają bazę, zanim którekolwiek zdąży coś
+	 * zapisać, i oba wołają InPost. Joomla z sesją trzymaną w bazie nie ustawia żądań
+	 * w kolejce. Dlatego rezerwację robi jedno zapytanie UPDATE z warunkiem „kolumna pusta”:
+	 * baza wykona je tylko raz, drugie żądanie dostanie zero zmienionych wierszy.
+	 *
+	 * @return string|false  wartość rezerwacji albo false, gdy zamówienie jest już zajęte
+	 */
+	protected function claimShipmentSlot($orderId)
+	{
+		$this->ensureShipmentIdFieldExists();
+
+		$claim = self::PENDING_PREFIX . time();
+		$db = Factory::getContainer()->get(DatabaseInterface::class);
+		$column = $db->quoteName('inpost_shipment_id');
+		$query = $db->getQuery(true)
+			->update($db->quoteName('#__hikashop_order'))
+			->set($column . ' = ' . $db->quote($claim))
+			->where($db->quoteName('order_id') . ' = ' . (int)$orderId)
+			->where('(' . $column . ' IS NULL OR ' . $column . ' = ' . $db->quote('') . ')');
+		$db->setQuery($query);
+		$db->execute();
+
+		return $db->getAffectedRows() === 1 ? $claim : false;
+	}
+
+	/**
+	 * Zwalnia rezerwację. Z podaną wartością zwalnia tylko tę jedną (żeby nie skasować
+	 * numeru przesyłki ani cudzej rezerwacji), bez niej dowolną rezerwację zamówienia.
+	 */
+	protected function releaseShipmentClaim($orderId, $claim = null)
+	{
+		$db = Factory::getContainer()->get(DatabaseInterface::class);
+		$column = $db->quoteName('inpost_shipment_id');
+		$query = $db->getQuery(true)
+			->update($db->quoteName('#__hikashop_order'))
+			->set($column . ' = NULL')
+			->where($db->quoteName('order_id') . ' = ' . (int)$orderId);
+
+		if ($claim !== null) {
+			$query->where($column . ' = ' . $db->quote($claim));
+		} else {
+			$query->where($column . ' LIKE ' . $db->quote(self::PENDING_PREFIX . '%'));
+		}
+
+		$db->setQuery($query);
+		$db->execute();
+
+		return $db->getAffectedRows() === 1;
+	}
+
+	/**
+	 * Czy odpowiedź ShipX to jednoznaczna odmowa utworzenia przesyłki.
+	 *
+	 * Odmową jest wyłącznie odpowiedź z kodem 4xx (błąd walidacji, złe dane dostępowe).
+	 * Brak odpowiedzi, przekroczony czas albo kod 5xx odmową nie są: przesyłka mogła
+	 * powstać, tylko my się o tym nie dowiedzieliśmy.
+	 */
+	protected function isDefiniteRefusal($result)
+	{
+		if (!is_object($result) || !isset($result->_httpCode)) {
+			return false;
+		}
+
+		return $result->_httpCode >= 400 && $result->_httpCode < 500;
 	}
 	
 	/**
@@ -429,13 +585,17 @@ class InpostHika extends \hikashopShippingPlugin
 		}
 		
 		// Weryfikuj token dla POST
-		if (in_array($action, ['create_shipment', 'get_label', 'recreate_shipment'])) {
+		if (in_array($action, ['create_shipment', 'get_label', 'recreate_shipment', 'release_pending'])) {
 			Session::checkToken() or die('Invalid Token');
 		}
-		
+
 		$shippingParams = $this->getShippingParamsForOrder($order);
-		
+
 		switch ($action) {
+			case 'release_pending':
+				$this->handleReleasePending($order);
+				break;
+
 			case 'create_shipment':
 				$lockerName = $input->getString('locker_name', '');
 				$parcelSize = $input->getCmd('parcel_size', '');
@@ -455,6 +615,23 @@ class InpostHika extends \hikashopShippingPlugin
 	/**
 	 * Anuluje starą przesyłkę i wraca do stanu początkowego
 	 */
+	/**
+	 * Zdejmuje rezerwację po nierozstrzygniętym tworzeniu przesyłki.
+	 *
+	 * Świadoma decyzja administratora: sprawdził w Managerze Paczek, że przesyłki nie ma
+	 * (albo ją tam anulował) i chce spróbować jeszcze raz.
+	 */
+	protected function handleReleasePending($order)
+	{
+		$app = Factory::getApplication();
+
+		if ($this->releaseShipmentClaim($order->order_id)) {
+			$app->enqueueMessage(Text::_('PLG_HIKASHOPSHIPPING_INPOST_HIKA_PENDING_RELEASED'), 'message');
+		}
+
+		$this->redirectToOrder($order->order_id);
+	}
+
 	protected function handleRecreateShipment($order, $shippingParams)
 	{
 		$app = Factory::getApplication();
@@ -462,6 +639,12 @@ class InpostHika extends \hikashopShippingPlugin
 
 		// Pobierz stare shipment_id
 		$oldShipmentId = $this->getShipmentIdForOrder($order->order_id);
+
+		// Rezerwacja to nie przesyłka: nie ma czego anulować w InPost.
+		if ($this->isPendingClaim($oldShipmentId)) {
+			$this->handleReleasePending($order);
+			return;
+		}
 
 		// Anuluj starą przesyłkę (best effort - InPost może odmówić, jeśli już nadana/odebrana)
 		$cancelOk = false;
@@ -490,10 +673,9 @@ class InpostHika extends \hikashopShippingPlugin
 		}
 		
 		// Przekieruj z powrotem na stronę zamówienia
-		$redirectUrl = 'index.php?option=com_hikashop&ctrl=order&task=edit&cid=' . (int)$order->order_id;
-		$app->redirect(Route::_($redirectUrl, false));
+		$this->redirectToOrder($order->order_id);
 	}
-	
+
 	/**
 	 * Tworzy przesyłkę w ShipX API
 	 */
@@ -525,14 +707,18 @@ class InpostHika extends \hikashopShippingPlugin
 		// - przycisk "Utwórz przesyłkę" jest widoczny tylko dopóki nie ma zapisanego
 		// inpost_shipment_id, ale dwa równoległe żądania mogły już zdążyć wystartować)
 		$existingShipmentId = $this->getShipmentIdForOrder($order->order_id);
+		if ($this->isPendingClaim($existingShipmentId)) {
+			$app->enqueueMessage(Text::_('PLG_HIKASHOPSHIPPING_INPOST_HIKA_PENDING_BUSY'), 'warning');
+			$this->redirectToOrder($order->order_id);
+			return;
+		}
 		if (!empty($existingShipmentId)) {
 			$app->enqueueMessage(
 				'Przesyłka dla tego zamówienia już istnieje (ID: ' . $existingShipmentId . '). '
 				. 'Odśwież stronę zamówienia - jeśli chcesz utworzyć nową, najpierw użyj "Utwórz ponownie".',
 				'warning'
 			);
-			$redirectUrl = 'index.php?option=com_hikashop&ctrl=order&task=edit&cid=' . (int)$order->order_id;
-			$app->redirect(Route::_($redirectUrl, false));
+			$this->redirectToOrder($order->order_id);
 			return;
 		}
 
@@ -594,7 +780,16 @@ class InpostHika extends \hikashopShippingPlugin
 		}
 
 		$this->debug('Creating shipment', $shipmentData, $shippingParams);
-		
+
+		// Rezerwacja tuż przed wywołaniem InPost. Kto przegrał wyścig (drugie kliknięcie),
+		// ten nie woła API w ogóle.
+		$claim = $this->claimShipmentSlot($order->order_id);
+		if ($claim === false) {
+			$app->enqueueMessage(Text::_('PLG_HIKASHOPSHIPPING_INPOST_HIKA_PENDING_BUSY'), 'warning');
+			$this->redirectToOrder($order->order_id);
+			return;
+		}
+
 		// Wywołaj API
 		$result = $this->callShipXApi(
 			'POST',
@@ -602,11 +797,11 @@ class InpostHika extends \hikashopShippingPlugin
 			$shipmentData,
 			$shippingParams
 		);
-		
+
 		if ($result && isset($result->id)) {
-			// Sukces - zapisz shipment_id w bazie
+			// Sukces - numer przesyłki zastępuje rezerwację
 			$this->ensureShipmentIdFieldExists();
-			
+
 			$query = $db->getQuery(true)
 				->update($db->quoteName('#__hikashop_order'))
 				->set($db->quoteName('inpost_shipment_id') . ' = ' . $db->quote($result->id))
@@ -642,9 +837,26 @@ class InpostHika extends \hikashopShippingPlugin
 			);
 
 			// Przekieruj z powrotem na stronę zamówienia
-			$redirectUrl = 'index.php?option=com_hikashop&ctrl=order&task=edit&cid=' . (int)$order->order_id;
-			$app->redirect(Route::_($redirectUrl, false));
+			$this->redirectToOrder($order->order_id);
+		} elseif (!$this->isDefiniteRefusal($result)) {
+			// InPost nie odpowiedział albo odpowiedział czymś, czego nie umiemy odczytać
+			// (przekroczony czas, błąd 5xx). Przesyłka mogła powstać. Rezerwacja ZOSTAJE:
+			// ponowne kliknięcie nie założy drugiej, płatnej przesyłki, dopóki administrator
+			// sam nie sprawdzi w Managerze Paczek i nie zdejmie blokady.
+			$this->debug('Shipment creation outcome unknown', [
+				'http_code' => is_object($result) ? ($result->_httpCode ?? null) : null,
+				'claim' => $claim
+			], $shippingParams);
+
+			$app->enqueueMessage(
+				Text::sprintf('PLG_HIKASHOPSHIPPING_INPOST_HIKA_CREATE_UNKNOWN', (int)$order->order_id),
+				'error'
+			);
+			$this->redirectToOrder($order->order_id);
 		} else {
+			// Jednoznaczna odmowa: przesyłka nie powstała, rezerwację można zwolnić.
+			$this->releaseShipmentClaim($order->order_id, $claim);
+
 			$errorMsg = isset($result->error) ? $result->error : 'Nieznany błąd';
 			$errorDesc = isset($result->description) ? $result->description : '';
 			$errorDetails = isset($result->details) ? json_encode($result->details) : '';
@@ -838,7 +1050,7 @@ class InpostHika extends \hikashopShippingPlugin
 	{
 		$shipmentId = $this->getShipmentIdForOrder($order->order_id);
 
-		if (empty($shipmentId)) {
+		if (empty($shipmentId) || $this->isPendingClaim($shipmentId)) {
 			Factory::getApplication()->enqueueMessage('Brak ID przesyłki', 'error');
 			return;
 		}
@@ -1200,6 +1412,10 @@ class InpostHika extends \hikashopShippingPlugin
 	 * Joomla 4/5 loguje do administrator/logs, a nie do JPATH_ROOT/logs - stąd wcześniejsze
 	 * ostrzeżenia file_put_contents. Bierzemy log_path z konfiguracji, potem standardowe
 	 * lokalizacje; jeśli żadna nie jest zapisywalna, milczymy zamiast zasypywać panel błędami.
+	 *
+	 * Plik ma rozszerzenie .php i nagłówek z die(), tak jak dzienniki samej Joomli. Katalog
+	 * dzienników bywa dostępny z sieci, a w pliku są dane odbiorców (imię, e-mail, telefon):
+	 * zwykły plik .log pod znaną nazwą dałoby się po prostu pobrać przeglądarką.
 	 */
 	protected function resolveDebugLogPath()
 	{
@@ -1213,11 +1429,44 @@ class InpostHika extends \hikashopShippingPlugin
 			$dir = rtrim(trim($dir), '/\\');
 
 			if ($dir !== '' && is_dir($dir) && is_writable($dir)) {
-				return $dir . '/inpost_hika_debug.log';
+				return $dir . '/' . self::DEBUG_LOG_FILE;
 			}
 		}
 
 		return '';
+	}
+
+	/**
+	 * Zakłada chroniony plik dziennika i wciąga do niego stary, niechroniony.
+	 *
+	 * Wersje do 4.2.21 pisały do inpost_hika_debug.log. Jego treść przenosimy za nagłówek
+	 * z die() i kasujemy oryginał, żeby dane odbiorców nie zostały pod publicznym adresem.
+	 */
+	protected function prepareDebugLog($logFile)
+	{
+		if (is_file($logFile)) {
+			return;
+		}
+
+		file_put_contents($logFile, "#\n#<?php die('Forbidden.'); ?>\n", LOCK_EX);
+
+		$legacy = dirname($logFile) . '/' . self::DEBUG_LOG_FILE_LEGACY;
+		if (!is_file($legacy)) {
+			return;
+		}
+
+		$source = @fopen($legacy, 'rb');
+		$target = @fopen($logFile, 'ab');
+		if ($source && $target) {
+			stream_copy_to_stream($source, $target);
+		}
+		if ($source) {
+			fclose($source);
+		}
+		if ($target) {
+			fclose($target);
+			@unlink($legacy);
+		}
 	}
 
 	/**
@@ -1233,6 +1482,8 @@ class InpostHika extends \hikashopShippingPlugin
 
 		$logFile = $this->resolveDebugLogPath();
 		if ($logFile === '') return;
+
+		$this->prepareDebugLog($logFile);
 
 		$timestamp = date('Y-m-d H:i:s');
 		$logMessage = "[{$timestamp}] {$message}";
@@ -1399,6 +1650,45 @@ class InpostHika extends \hikashopShippingPlugin
 			$app->enqueueMessage('Proszę wybrać paczkomat lub punkt odbioru InPost', 'error');
 			$do = false;
 			return;
+		}
+
+		$this->attachLockerToNewOrder($order, $selectedLocker);
+	}
+
+	/**
+	 * Wpisuje paczkomat do zamówienia, zanim HikaShop je zapisze.
+	 *
+	 * Do 4.2.21 paczkomat trafiał do bazy dopiero w onAfterOrderConfirm. HikaShop wysyła
+	 * jednak potwierdzenie dla klienta i powiadomienie dla sklepu wcześniej, w trakcie
+	 * samego zapisu zamówienia, więc w obu tych wiadomościach paczkomatu nie było
+	 * (pojawiał się dopiero w mailach o zmianie statusu). Wartość ustawiona tutaj
+	 * zapisuje się razem z zamówieniem i jest już dostępna, gdy powstają maile.
+	 *
+	 * Zapis w onAfterOrderConfirm zostaje jako zabezpieczenie.
+	 */
+	protected function attachLockerToNewOrder($order, $locker)
+	{
+		// Właściwość trafi do INSERT-a, więc ustawiamy ją tylko wtedy, gdy kolumna
+		// naprawdę istnieje. Inaczej zapis zamówienia skończyłby się błędem SQL.
+		try {
+			$this->ensureOrderFieldExists();
+
+			$db = Factory::getContainer()->get(DatabaseInterface::class);
+			$columns = $db->getTableColumns('#__hikashop_order');
+
+			if (isset($columns[$this->orderFieldName])) {
+				$order->{$this->orderFieldName} = $locker;
+			}
+		} catch (\Throwable $e) {
+			// Bez kolumny zostaje ramka wtyczki czytająca order_shipping_params.
+		}
+
+		if (empty($order->order_shipping_params)) {
+			$order->order_shipping_params = new \stdClass();
+		}
+
+		if (is_object($order->order_shipping_params)) {
+			$order->order_shipping_params->inpost_locker = $locker;
 		}
 	}
 

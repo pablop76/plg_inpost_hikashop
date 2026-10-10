@@ -124,9 +124,17 @@ Plugin wysyłkowy dla HikaShop (Joomla 4/5/6) integrujący InPost Paczkomaty z m
 1. Przejdź do szczegółów zamówienia w HikaShop
 2. Jeśli zamówienie ma wysyłkę InPost, zobaczysz sekcję "InPost ShipX (Admin)"
 3. Kliknij **"Utwórz przesyłkę InPost"**
-4. Jeśli zamówienie ma status "confirmed" - przesyłka zostanie automatycznie opłacona
-5. Jeśli zamówienie nie jest potwierdzone - kliknij **"Opłać przesyłkę"** gdy będzie gotowe
-6. Po opłaceniu pojawi się przycisk **"Pobierz etykietę"**
+4. InPost potwierdza przesyłkę sam, po kilku sekundach. Osobnego kroku opłacania nie ma
+5. Gdy przesyłka jest gotowa, **"Pobierz etykietę"** zwraca plik PDF
+
+### Zabezpieczenie przed drugą przesyłką
+
+Przesyłki InPost są płatne, więc wtyczka pilnuje, żeby jedno zamówienie nie dostało dwóch:
+
+- na czas tworzenia przesyłki zamówienie jest rezerwowane jednym zapytaniem do bazy, więc podwójne kliknięcie przycisku woła InPost tylko raz
+- gdy InPost nie odpowie (przekroczony czas, błąd serwera), nie wiadomo, czy przesyłka powstała. Tworzenie zostaje wtedy zablokowane, a panel zamówienia prosi o sprawdzenie w Managerze Paczek, czy istnieje przesyłka z opisem „Zamówienie #numer”. Przycisk **"Odblokuj tworzenie przesyłki"** zdejmuje blokadę
+- jednoznaczna odmowa InPost (błędny kod paczkomatu, zły telefon, złe dane dostępowe) niczego nie blokuje: można poprawić dane i spróbować od razu
+- **"Utwórz ponownie"** przy przesyłce już potwierdzonej ostrzega przed kliknięciem, że InPost jej nie anuluje i że powstanie druga, osobno płatna
 
 ### Logika tworzenia etykiet
 
@@ -178,13 +186,15 @@ O tym, gdzie HikaShop je pokazuje, decydują dwa przełączniki w edytorze pola
 Plugin obsługuje dwa rodzaje debugowania:
 
 ### Debug do pliku
-Gdy włączony, plugin zapisuje logi do pliku:
+Gdy włączony, plugin zapisuje logi do pliku w katalogu dzienników Joomli (`log_path` z konfiguracji, zwykle `administrator/logs`):
 
 ```
-/logs/inpost_hika_debug.log
+administrator/logs/inpost_hika_debug.php
 ```
 
 Logowane są: wybór paczkomatu, zapis do bazy, potwierdzenie zamówienia, wywołania API ShipX.
+
+Plik ma rozszerzenie `.php` i zaczyna się od `die()`, tak jak dzienniki samej Joomli. W dzienniku są dane odbiorców (imię, e-mail, telefon), a katalog dzienników bywa dostępny z sieci: zwykły plik `.log` dałoby się pobrać przeglądarką. Dziennik czyta się przez FTP albo menedżer plików. Wersje do 4.2.21 pisały do `inpost_hika_debug.log`; przy pierwszym zapisie wtyczka przenosi jego treść do nowego pliku i stary usuwa. Jeśli debugowanie jest wyłączone, stary plik trzeba usunąć ręcznie.
 
 ### Debug na zapleczu
 Gdy włączony, wyświetla pełne odpowiedzi API bezpośrednio w panelu admina (przydatne do diagnozowania problemów).
@@ -193,8 +203,20 @@ Gdy włączony, wyświetla pełne odpowiedzi API bezpośrednio w panelu admina (
 
 Plugin automatycznie tworzy kolumny w tabeli `#__hikashop_order`:
 
-- `inpost_locker` - nazwa wybranego paczkomatu
-- `inpost_shipment_id` - ID przesyłki w ShipX (po utworzeniu)
+- `inpost_locker` - nazwa wybranego paczkomatu. Zapisywana razem z zamówieniem, więc jest już w potwierdzeniu dla klienta i w powiadomieniu o nowym zamówieniu dla sklepu
+- `inpost_shipment_id` - ID przesyłki w ShipX (po utworzeniu); na czas tworzenia stoi tu rezerwacja w postaci `pending:<znacznik czasu>`
+- `inpost_tracking_number` - numer nadania
+
+## Budowanie paczki i testy
+
+```
+php -d extension=zip build.php
+php tests/run.php
+```
+
+`build.php` pakuje dokładnie to, co wymienia manifest, do `build/plg_inpost_hikashop-<wersja>.zip`.
+
+Testy chodzą po prawdziwej instalacji Joomli z HikaShopem (ścieżka w zmiennej `JOOMLA_PATH`), z wtyczką zainstalowaną z tej paczki. Zakładają fikcyjnego klienta i zamówienia bez pozycji, a na końcu je kasują. Nie wysyłają poczty i nie łączą się z InPost: wywołania ShipX są podstawione.
 
 ## Struktura plików (Joomla 5/6)
 
@@ -215,6 +237,8 @@ plg_inpost_hika/
 │   └── pl-PL/
 │       ├── pl-PL.plg_hikashopshipping_inpost_hika.ini
 │       └── pl-PL.plg_hikashopshipping_inpost_hika.sys.ini
+├── tests/                   # Testy (poza paczką)
+├── build.php                # Budowanie paczki (poza paczką)
 └── README.md
 ```
 
