@@ -21,6 +21,7 @@ require_once __DIR__ . '/bootstrap-joomla.php';
 use Joomla\CMS\Factory;
 use Joomla\CMS\Language\Text;
 use Joomla\CMS\Plugin\PluginHelper;
+use Joomla\Database\DatabaseInterface;
 use Pablop76\Plugin\HikashopShipping\InpostHika\Extension\InpostHika;
 
 $zdane = 0;
@@ -204,9 +205,16 @@ $idShipx = (int) $pdo->lastInsertId();
 
 $idNowego      = 0;
 $katalogLogow  = sys_get_temp_dir() . '/inpost_test_' . $znacznik;
+$nazwaKopii    = 'inpost_test_' . $znacznik;
 $stanSesji     = $app->getUserState('hikashop.inpost_locker', '');
 
-register_shutdown_function(static function () use ($pdo, $prefix, $idKlienta, $idAdresu, $idShipx, &$idNowego, $katalogLogow, $app, $stanSesji): void {
+register_shutdown_function(static function () use ($pdo, $prefix, $idKlienta, $idAdresu, $idShipx, &$idNowego, $katalogLogow, $nazwaKopii, $app, $stanSesji): void {
+    try {
+        $pdo->prepare("DELETE FROM {$prefix}hikashop_email_log WHERE email_log_name = :nazwa")->execute([':nazwa' => $nazwaKopii]);
+    } catch (Throwable $blad) {
+        // Witryna bez historii wiadomości HikaShopa: nie ma czego sprzątać.
+    }
+
     foreach (array_filter([$idShipx, $idNowego]) as $id) {
         $pdo->prepare("DELETE FROM {$prefix}hikashop_order WHERE order_id = :id")->execute([':id' => $id]);
         $pdo->prepare("DELETE FROM {$prefix}hikashop_history WHERE history_order_id = :id")->execute([':id' => $id]);
@@ -507,6 +515,83 @@ $w->parametryDostawy = $parametry;
 $html = $rysuj($w, $zamowienie, 'email_notification_html');
 
 wynik('wiadomość: jest ramka, nie ma panelu ShipX', str_contains($html, 'inpost_locker_info') && !str_contains($html, 'inpost_shipx_admin'));
+
+// HikaShop zapisuje kopię każdej wiadomości (wtyczka „Historia e-maili”), a jego tabele
+// mają zwykle kodowanie utf8mb3, które nie mieści znaków czterobajtowych, czyli emotikon.
+// Taki znak wraca z bazy jako „?”, więc piktogram paczki jest w HTML zapisany kodem.
+$czterobajtowe = static fn (string $tresc): bool => preg_match('/[\x{10000}-\x{10FFFF}]/u', $tresc) === 1;
+$piktogram     = html_entity_decode('&#128230;', ENT_QUOTES, 'UTF-8');
+
+wynik('wiadomość: w ramce jest piktogram paczki zapisany kodem HTML', str_contains($html, '&#128230; '));
+wynik('wiadomość: ramka bez znaków czterobajtowych', !$czterobajtowe($html));
+
+// To samo na prawdziwej bazie i tym połączeniem, którym pisze HikaShop.
+$zBazy = null;
+
+try {
+    $db      = Factory::getContainer()->get(DatabaseInterface::class);
+    $tabela  = $db->quoteName('#__inpost_test_utf8mb3');
+    $db->setQuery('CREATE TEMPORARY TABLE ' . $tabela . ' (tresc text NOT NULL) DEFAULT CHARACTER SET utf8')->execute();
+    $db->setQuery('INSERT INTO ' . $tabela . ' (tresc) VALUES (' . $db->quote($html) . ')')->execute();
+    $zBazy = (string) $db->setQuery('SELECT tresc FROM ' . $tabela)->loadResult();
+    $db->setQuery('DROP TEMPORARY TABLE ' . $tabela)->execute();
+} catch (Throwable $blad) {
+    echo '  (zapis ramki do tabeli utf8mb3: ' . $blad->getMessage() . ')' . PHP_EOL;
+}
+
+wynik('wiadomość: ramka wraca z tabeli utf8mb3 bez zmian', $zBazy === $html, 'z bazy: ' . var_export($zBazy === null ? null : mb_substr(strip_tags($zBazy), 0, 30), true));
+
+// Wersję tekstową HikaShop robi z HTML i zamienia przy tym kod piktogramu z powrotem na znak.
+// Klient ma go dostać, ale w kopii zapisywanej do historii nie może go być.
+$tekst = strip_tags(hikashop_get('class.mail')->textVersion($html));
+
+wynik('wiadomość: w wersji tekstowej dla klienta piktogram zostaje', str_contains($tekst, $piktogram . ' '));
+
+$plikHistorii = JPATH_PLUGINS . '/hikashop/email_history/email_history_class.php';
+
+if (is_file($plikHistorii)) {
+    include_once $plikHistorii;
+
+    // Zapis tą samą klasą, której używa HikaShop przy wysyłce: to ona wywołuje zdarzenie,
+    // na które odpowiada zainstalowana wtyczka.
+    $kopia = new stdClass();
+
+    foreach (['sender_email', 'sender_name', 'recipient_email', 'recipient_name', 'reply_email', 'reply_name', 'cc_email', 'bcc_email', 'ref_id'] as $pole) {
+        $kopia->{'email_log_' . $pole} = '';
+    }
+
+    $kopia->email_log_name      = $nazwaKopii;
+    $kopia->email_log_subject   = 'Test wtyczki InPost';
+    $kopia->email_log_body      = $html;
+    $kopia->email_log_altbody   = $tekst;
+    $kopia->email_log_params    = '{}';
+    $kopia->email_log_date      = time();
+    $kopia->email_log_published = 1;
+
+    $zapisana = ['email_log_body' => null, 'email_log_altbody' => null];
+
+    try {
+        $idKopii = (int) (new hikashopPlg_email_historyClass())->save($kopia);
+
+        $q = $pdo->prepare("SELECT email_log_body, email_log_altbody FROM {$prefix}hikashop_email_log WHERE email_log_id = :id");
+        $q->execute([':id' => $idKopii]);
+        $zapisana = $q->fetch(PDO::FETCH_ASSOC) ?: $zapisana;
+    } catch (Throwable $blad) {
+        echo '  (zapis kopii do historii HikaShopa: ' . $blad->getMessage() . ')' . PHP_EOL;
+    }
+
+    $tekstKopii = (string) $zapisana['email_log_altbody'];
+
+    wynik('historia HikaShopa: część HTML wraca bez zmian, z piktogramem', $zapisana['email_log_body'] === $html);
+    wynik(
+        'historia HikaShopa: w części tekstowej nie ma „?” ani piktogramu',
+        str_contains($tekstKopii, $kod) && !str_contains($tekstKopii, '?') && !$czterobajtowe($tekstKopii),
+        'z bazy: ' . var_export(mb_substr($tekstKopii, 0, 30), true)
+    );
+    wynik('historia HikaShopa: poza piktogramem część tekstowa jest taka jak u klienta', $tekstKopii === str_replace($piktogram . ' ', '', $tekst));
+} else {
+    echo '  (pominięto historię: w tej witrynie nie ma wtyczki „Historia e-maili” HikaShopa)' . PHP_EOL;
+}
 
 // Żądanie akcji przy zamówieniu z inną metodą dostawy.
 $obce = clone $zamowienie;

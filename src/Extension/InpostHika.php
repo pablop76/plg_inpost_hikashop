@@ -1,7 +1,7 @@
 <?php
 /**
  * @package     HikaShop InPost Paczkomaty Shipping Plugin
- * @version     4.2.23
+ * @version     4.2.24
  * @copyright   (C) 2026
  * @license     GNU/GPLv3 http://www.gnu.org/licenses/gpl-3.0.html
  */
@@ -57,6 +57,12 @@ class InpostHika extends \hikashopShippingPlugin
 	// Dziennik debug: chroniony plik .php (patrz resolveDebugLogPath()) i nazwa sprzed 4.2.22.
 	const DEBUG_LOG_FILE = 'inpost_hika_debug.php';
 	const DEBUG_LOG_FILE_LEGACY = 'inpost_hika_debug.log';
+
+	// Piktogram paczki w ramce paczkomatu, zapisany kodem HTML, a nie znakiem. HikaShop zapisuje
+	// kopię każdej wiadomości (wtyczka „Historia e-maili”), a jego tabele mają zwykle kodowanie
+	// utf8mb3, które nie mieści znaków czterobajtowych: emotikona wpisana wprost wracała
+	// z bazy jako „?”. Patrz też onBeforeEmail_logCreate().
+	const LOCKER_ICON_HTML = '&#128230;';
 
 	public $multiple = true;
 	public $name = 'inpost_hika';
@@ -138,6 +144,25 @@ class InpostHika extends \hikashopShippingPlugin
 		if ($lockerSave !== '') {
 			$app->setUserState('hikashop.inpost_locker', $lockerSave);
 		}
+	}
+
+	/**
+	 * Kopia wiadomości zapisywana przez HikaShopa (wtyczka „Historia e-maili”).
+	 *
+	 * W HTML piktogram z ramki paczkomatu jest zapisany kodem, ale wersję tekstową HikaShop
+	 * robi z HTML i zamienia przy tym kod z powrotem na znak, którego tabela w utf8mb3 nie
+	 * mieści (w historii zostawał „?”). Klient dostaje wiadomość bez zmian, piktogram znika
+	 * tylko z zapisywanej kopii tekstowej.
+	 */
+	public function onBeforeEmail_logCreate(&$email_log, &$do)
+	{
+		if (!is_object($email_log) || empty($email_log->email_log_altbody) || !is_string($email_log->email_log_altbody)) {
+			return;
+		}
+
+		$icon = html_entity_decode(self::LOCKER_ICON_HTML, ENT_QUOTES, 'UTF-8');
+
+		$email_log->email_log_altbody = str_replace(array($icon . ' ', $icon), '', $email_log->email_log_altbody);
 	}
 
 	/**
@@ -235,10 +260,10 @@ class InpostHika extends \hikashopShippingPlugin
 		$shipmentId = $this->getShipmentIdForOrder($order->order_id);
 
 		$label = Text::_('PLG_HIKASHOPSHIPPING_INPOST_HIKA_FIELD_LABEL');
-		
+
 		// Wyświetl HTML bezpośrednio (echo) - to jest wywoływane w trakcie renderowania
 		echo '<div id="inpost_locker_info" style="background:#fff3cd; border:2px solid #ffc107; padding:15px; margin:15px 0; border-radius:8px; font-size:14px;">';
-		echo '<strong style="color:#856404; font-size:16px;">📦 ' . htmlspecialchars($label) . ':</strong><br>';
+		echo '<strong style="color:#856404; font-size:16px;">' . self::LOCKER_ICON_HTML . ' ' . htmlspecialchars($label) . ':</strong><br>';
 		echo '<span style="color:#333; font-size:15px; font-weight:bold;">' . htmlspecialchars($locker) . '</span>';
 		echo '</div>';
 		
