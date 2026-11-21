@@ -94,7 +94,7 @@ Od 4.2.23 adres serwera aktualizacji w manifeście nie zawiera tego słowa dosł
 | Domyślny zoom           | Poziom przybliżenia (pusty = auto)                                | auto      |
 | Pokaż paczkomaty        | Włącz paczkomaty (stare API)                                      | Tak       |
 | Pokaż punkty POP        | Włącz punkty POP (stare API)                                      | Nie       |
-| Tryb debug              | Logowanie do pliku `/logs/inpost_hika_debug.log`                  | Nie       |
+| Tryb debug              | Logowanie do chronionego pliku `inpost_hika_debug.php` w katalogu dzienników Joomli (zwykle `administrator/logs`), patrz niżej | Nie       |
 | Debug na zapleczu       | Wyświetlanie odpowiedzi API w panelu admina                       | Nie       |
 | Wymagaj potwierdzenia   | Tylko zamówienia `confirmed`/`shipped` mogą mieć przesyłki        | Tak       |
 
