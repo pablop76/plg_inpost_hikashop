@@ -1,7 +1,7 @@
 <?php
 /**
  * @package     HikaShop InPost Paczkomaty Shipping Plugin
- * @version     4.2.24
+ * @version     4.2.25
  * @copyright   (C) 2026
  * @license     GNU/GPLv3 http://www.gnu.org/licenses/gpl-3.0.html
  */
@@ -63,6 +63,9 @@ class InpostHika extends \hikashopShippingPlugin
 	// utf8mb3, które nie mieści znaków czterobajtowych: emotikona wpisana wprost wracała
 	// z bazy jako „?”. Patrz też onBeforeEmail_logCreate().
 	const LOCKER_ICON_HTML = '&#128230;';
+
+	// Statusy zamówienia, przy których wolno utworzyć przesyłkę, gdy włączone jest „require_confirmed”.
+	const SHIPMENT_STATUSES = array('confirmed', 'shipped');
 
 	public $multiple = true;
 	public $name = 'inpost_hika';
@@ -140,7 +143,7 @@ class InpostHika extends \hikashopShippingPlugin
 		$input = $app->input;
 		
 		// Obsługa AJAX zapisu wyboru paczkomatu (frontend)
-		$lockerSave = $input->post->getString('inpost_locker_save', '');
+		$lockerSave = $this->cleanLocker($input->post->getString('inpost_locker_save', ''));
 		if ($lockerSave !== '') {
 			$app->setUserState('hikashop.inpost_locker', $lockerSave);
 		}
@@ -250,9 +253,16 @@ class InpostHika extends \hikashopShippingPlugin
 		}
 
 		if (empty($locker)) {
+			// Zamówienie z dostawą InPost bez punktu (np. metoda zmieniona w zapleczu): bez tej
+			// informacji administrator nie widział ani punktu, ani panelu ShipX, ani powodu.
+			if ($showShipx) {
+				echo '<div id="inpost_locker_missing" style="background:#fff3cd; border:2px solid #ffc107; padding:15px; margin:15px 0; border-radius:8px; font-size:14px; color:#856404;">';
+				echo '⚠️ ' . htmlspecialchars(Text::sprintf('PLG_HIKASHOPSHIPPING_INPOST_HIKA_NO_LOCKER_ADMIN', Text::_('PLG_HIKASHOPSHIPPING_INPOST_HIKA_FIELD_LABEL')));
+				echo '</div>';
+			}
 			return;
 		}
-		
+
 		// Pobierz shipping_params dla konfiguracji ShipX
 		$shippingParams = $this->getShippingParamsForOrder($order);
 
@@ -282,27 +292,17 @@ class InpostHika extends \hikashopShippingPlugin
 		   }
 		
 		// Sprawdź status zamówienia HikaShop - tylko potwierdzone/opłacone mogą mieć tworzone przesyłki
-		$requireConfirmed = isset($shippingParams->require_confirmed) ? (bool)$shippingParams->require_confirmed : true;
-		if ($requireConfirmed) {
+		if (!$this->orderStatusAllowsShipment($order, $shippingParams)) {
 			$orderStatus = $order->order_status ?? '';
-			$allowedStatuses = array('confirmed', 'shipped');
-			if (!in_array($orderStatus, $allowedStatuses)) {
-				echo '<div style="background:#fff3cd; border:2px solid #ffc107; padding:12px; margin:10px 0; border-radius:6px; color:#856404; font-size:14px;">';
-				echo '<strong>⚠️ Zamówienie nie jest potwierdzone</strong><br>';
-				echo 'Tworzenie przesyłki InPost jest możliwe tylko dla zamówień o statusie: <b>' . implode(', ', $allowedStatuses) . '</b>.<br>';
-				echo 'Aktualny status: <b>' . htmlspecialchars($orderStatus) . '</b>';
-				echo '</div>';
-				return;
-			}
+			echo '<div style="background:#fff3cd; border:2px solid #ffc107; padding:12px; margin:10px 0; border-radius:6px; color:#856404; font-size:14px;">';
+			echo '<strong>⚠️ Zamówienie nie jest potwierdzone</strong><br>';
+			echo 'Tworzenie przesyłki InPost jest możliwe tylko dla zamówień o statusie: <b>' . implode(', ', self::SHIPMENT_STATUSES) . '</b>.<br>';
+			echo 'Aktualny status: <b>' . htmlspecialchars($orderStatus) . '</b>';
+			echo '</div>';
+			return;
 		}
-		
-		// Pobierz tylko kod paczkomatu (pierwszy element przed " - ")
-		$lockerName = $locker;
-		if (strpos($locker, ' - ') !== false) {
-			$lockerName = trim(explode(' - ', $locker)[0]);
-		}
-		// Dodatkowo wyczyść z niepotrzebnych znaków - zostaw tylko litery i cyfry
-		$lockerCode = preg_replace('/[^A-Z0-9]/i', '', $lockerName);
+
+		$lockerCode = $this->lockerCode($locker);
 		
 		// Sekcja ShipX API (tylko admin)
 		$envIsSandbox = ($shippingParams->api_mode ?? 'production') === 'sandbox';
@@ -509,6 +509,47 @@ class InpostHika extends \hikashopShippingPlugin
 	}
 
 	/**
+	 * Czy status zamówienia pozwala utworzyć przesyłkę (opcja „require_confirmed”).
+	 * Jeden warunek dla przycisku w panelu i dla samej akcji.
+	 */
+	protected function orderStatusAllowsShipment($order, $shippingParams)
+	{
+		$requireConfirmed = isset($shippingParams->require_confirmed) ? (bool)$shippingParams->require_confirmed : true;
+
+		return !$requireConfirmed || in_array((string)($order->order_status ?? ''), self::SHIPMENT_STATUSES, true);
+	}
+
+	/**
+	 * Kod punktu z zapisanej wartości („KRA010M - ulica, miasto” → „KRA010M”).
+	 * Myślnik zostaje: PaczkoPunkty mają nazwy w rodzaju „POP-KRA12” i ShipX
+	 * przyjmuje je dosłownie (tak wysyła je też oficjalny moduł InPost).
+	 */
+	protected function lockerCode($locker)
+	{
+		return strtoupper(preg_replace('/[^A-Za-z0-9-]/', '', explode(' - ', (string)$locker, 2)[0]));
+	}
+
+	/**
+	 * Porządkuje wartość punktu z przeglądarki: bez znaczników, pojedyncze spacje, najwyżej 255 znaków.
+	 */
+	protected function cleanLocker($value)
+	{
+		$value = trim((string)preg_replace('/\s+/u', ' ', strip_tags((string)$value)));
+
+		return mb_substr($value, 0, 255);
+	}
+
+	/**
+	 * Czy wartość zaczyna się od nazwy punktu InPost. Nazwy paczkomatów i PaczkoPunktów
+	 * to litery, cyfry i myślnik (np. KRA010M, POP-KRA12); wzorzec jest świadomie luźny,
+	 * żeby nie odrzucić poprawnego punktu w formacie, którego jeszcze nie widzieliśmy.
+	 */
+	protected function isValidLocker($locker)
+	{
+		return preg_match('/^[A-Za-z0-9-]{3,20}$/', trim(explode(' - ', (string)$locker, 2)[0])) === 1;
+	}
+
+	/**
 	 * Czy w kolumnie inpost_shipment_id stoi rezerwacja zamiast numeru przesyłki.
 	 */
 	protected function isPendingClaim($shipmentId)
@@ -616,6 +657,22 @@ class InpostHika extends \hikashopShippingPlugin
 
 		$shippingParams = $this->getShippingParamsForOrder($order);
 
+		// Te same warunki co przy rysowaniu przycisków. Formularz z karty otwartej wcześniej
+		// nie może utworzyć przesyłki, gdy ShipX wyłączono albo status zamówienia się zmienił.
+		// Anulowanie („Utwórz ponownie”), etykieta i odblokowanie zostają przy każdym statusie.
+		if (empty($shippingParams->enable_shipx)) {
+			return;
+		}
+		if ($action === 'create_shipment' && !$this->orderStatusAllowsShipment($order, $shippingParams)) {
+			$app->enqueueMessage(Text::sprintf(
+				'PLG_HIKASHOPSHIPPING_INPOST_HIKA_STATUS_NOT_ALLOWED',
+				(string)($order->order_status ?? ''),
+				implode(', ', self::SHIPMENT_STATUSES)
+			), 'warning');
+			$this->redirectToOrder($order->order_id);
+			return;
+		}
+
 		switch ($action) {
 			case 'release_pending':
 				$this->handleReleasePending($order);
@@ -678,9 +735,11 @@ class InpostHika extends \hikashopShippingPlugin
 		}
 
 		// Wyczyść stare ID (niezależnie od wyniku anulowania - lokalnie pozwalamy utworzyć nową)
+		// razem z numerem nadania: inaczej panel pokazywał go przy nowej przesyłce.
 		$query = $db->getQuery(true)
 			->update($db->quoteName('#__hikashop_order'))
 			->set($db->quoteName('inpost_shipment_id') . ' = NULL')
+			->set($db->quoteName('inpost_tracking_number') . ' = NULL')
 			->where($db->quoteName('order_id') . ' = ' . (int)$order->order_id);
 		$db->setQuery($query);
 		$db->execute();
@@ -762,8 +821,8 @@ class InpostHika extends \hikashopShippingPlugin
 			return;
 		}
 		
-		// Kod paczkomatu ShipX przyjmuje wielkimi literami (w sandboxie pole jest edytowalne ręcznie)
-		$targetPoint = strtoupper(preg_replace('/[^A-Za-z0-9]/', '', (string)$lockerName));
+		// Kod punktu wielkimi literami, z myślnikiem PaczkoPunktów (w sandboxie pole jest edytowalne ręcznie)
+		$targetPoint = $this->lockerCode($lockerName);
 		if ($targetPoint === '') {
 			$app->enqueueMessage('Błąd: brak kodu paczkomatu dla tego zamówienia.', 'error');
 			return;
@@ -1085,7 +1144,8 @@ class InpostHika extends \hikashopShippingPlugin
 		// Pobierz etykietę jako PDF. format=Pdf; type z konfiguracji:
 		// normal = A4 (drukarka laserowa/atramentowa), A6 = mała etykieta (drukarka termiczna).
 		$labelType = (($shippingParams->label_type ?? 'normal') === 'A6') ? 'A6' : 'normal';
-		$labelData = $this->callShipXApi(
+		// Przy błędzie HTTP callShipXApi() oddaje null; rzutowanie oszczędza ostrzeżeń PHP 8.1+ niżej.
+		$labelData = (string) $this->callShipXApi(
 			'GET',
 			'/v1/shipments/' . $shipmentId . '/label?format=Pdf&type=' . $labelType,
 			null,
@@ -1668,11 +1728,27 @@ class InpostHika extends \hikashopShippingPlugin
 		if ($shippingType !== $this->name) return;
 
 		$app = Factory::getApplication();
-		$selectedLocker = $this->findSelectedLocker($order);
 
-		// Walidacja - punkt musi być wybrany
+		// Najpierw punkt wysłany z formularzem zamówienia: HikaShop zapisał go w koszyku w tym
+		// samym żądaniu. Sesja (zapis AJAX przy wyborze na mapie) jest tylko zapasem: ten zapis
+		// mógł nie dojść albo nie zdążyć przed kliknięciem „Zamawiam”, i wtedy zamówienie
+		// dostawało poprzedni punkt.
+		$selectedLocker = '';
+		if (isset($order->cart->cart_params) && is_object($order->cart->cart_params)) {
+			$selectedLocker = $this->cleanLocker($this->extractLockerFromCartParams($order->cart->cart_params, (int)$order->order_shipping_id));
+		}
 		if ($selectedLocker === '') {
-			$app->enqueueMessage('Proszę wybrać paczkomat lub punkt odbioru InPost', 'error');
+			$selectedLocker = $this->findSelectedLocker($order);
+		}
+
+		// Walidacja - punkt musi być wybrany i wyglądać jak nazwa punktu InPost
+		if ($selectedLocker === '') {
+			$app->enqueueMessage(Text::_('PLG_HIKASHOPSHIPPING_INPOST_HIKA_ALERT_SELECT_POINT'), 'error');
+			$do = false;
+			return;
+		}
+		if (!$this->isValidLocker($selectedLocker)) {
+			$app->enqueueMessage(Text::_('PLG_HIKASHOPSHIPPING_INPOST_HIKA_INVALID_POINT'), 'error');
 			$do = false;
 			return;
 		}
@@ -1720,6 +1796,10 @@ class InpostHika extends \hikashopShippingPlugin
 	protected function decorateRateWithWidget(&$rate, $selectedLocker)
 	{
 		$rate->custom_html_no_btn = true;
+		// Widżet pokazuje wybrany punkt, więc jego HTML zmienia się, gdy HikaShop zapisze punkt z formularza.
+		// HikaShop porównuje HTML metod przed i po zapisie kroku i przy różnicy pokazuje krok ponownie
+		// zamiast złożyć zamówienie (helpers/checkout.php, getCartMarkers()). Cena i metoda są porównywane dalej.
+		$rate->custom_html_ignore_cache = true;
 		$rate->custom_html = '';
 		
 		$this->loadGeoWidgetAssets();
@@ -1731,7 +1811,9 @@ class InpostHika extends \hikashopShippingPlugin
 		$currentValue = $selectedLocker !== '' ? $selectedLocker : Text::_('PLG_HIKASHOPSHIPPING_INPOST_HIKA_NOT_SELECTED');
 		$buttonLabel = $selectedLocker !== '' ? Text::_('PLG_HIKASHOPSHIPPING_INPOST_HIKA_CHANGE') : Text::_('PLG_HIKASHOPSHIPPING_INPOST_HIKA_SELECT');
 		
-		$inputName = 'checkout[shipping][' . $warehouseId . '][custom][' . $shippingId . '][' . $this->orderFieldName . ']';
+		// Nazwa, którą czyta HikaShop (helpers/checkout/shipping.php, validate()): checkout[shipping][custom][grupa][id metody][pole].
+		// Do 4.2.24 stało tu checkout[shipping][grupa][custom][id]: HikaShop tej wartości nie zapisywał.
+		$inputName = 'checkout[shipping][custom][' . $warehouseId . '][' . $shippingId . '][' . $this->orderFieldName . ']';
 		
 		$rate->custom_html .= '<div class="inpost-hika-widget" id="' . $widgetId . '">';
 		$rate->custom_html .= '<div class="inpost-hika-label">' . Text::_('PLG_HIKASHOPSHIPPING_INPOST_HIKA_SELECTED_LABEL') . '</div>';
@@ -1776,7 +1858,11 @@ class InpostHika extends \hikashopShippingPlugin
 	{
 		$doc = Factory::getApplication()->getDocument();
 		$changeLabelJs = json_encode(Text::_('PLG_HIKASHOPSHIPPING_INPOST_HIKA_CHANGE'));
+		$selectLabelJs = json_encode(Text::_('PLG_HIKASHOPSHIPPING_INPOST_HIKA_SELECT'));
 		$loadingMsgJs = json_encode(Text::_('PLG_HIKASHOPSHIPPING_INPOST_HIKA_LOADING'));
+		$closeLabelJs = json_encode(Text::_('PLG_HIKASHOPSHIPPING_INPOST_HIKA_CLOSE_MAP'));
+		$selectAlertJs = json_encode(Text::_('PLG_HIKASHOPSHIPPING_INPOST_HIKA_ALERT_SELECT_POINT'));
+		$mapFailedJs = json_encode(Text::_('PLG_HIKASHOPSHIPPING_INPOST_HIKA_MAP_LOAD_FAILED'));
 
 		// Buduj typy punktów dla starego API
 		$types = array();
@@ -1894,7 +1980,7 @@ class InpostHika extends \hikashopShippingPlugin
 			};
 			script.onerror = function(){
 				sdkLoading = false;
-				alert('Nie mozna zaladowac mapy InPost');
+				alert({$mapFailedJs});
 			};
 			document.head.appendChild(script);
 		} else {
@@ -1906,7 +1992,12 @@ class InpostHika extends \hikashopShippingPlugin
 	
 	function closeModal(){
 		var overlay = document.getElementById('inpost-modal-overlay');
-		if(overlay) overlay.remove();
+		if(overlay){
+			overlay.remove();
+			// Fokus wraca tam, skąd otwarto mapę (obsługa klawiaturą i czytnikiem ekranu).
+			var btn = document.getElementById(widgetId + '_btn');
+			if(btn) btn.focus();
+		}
 	}
 	
 	function openMapOld(){
@@ -1921,19 +2012,24 @@ class InpostHika extends \hikashopShippingPlugin
 		modal.style.cssText = 'background:#fff;width:95%;max-width:1000px;height:85vh;max-height:700px;border-radius:8px;overflow:hidden;position:relative;box-shadow:0 4px 20px rgba(0,0,0,0.3);';
 		
 		var closeBtn = document.createElement('button');
+		closeBtn.type = 'button';
 		closeBtn.innerHTML = '&times;';
-		closeBtn.style.cssText = 'position:absolute;top:10px;right:15px;z-index:100;background:#fff;border:2px solid #333;font-size:28px;font-weight:bold;cursor:pointer;width:40px;height:40px;border-radius:50%;box-shadow:0 2px 5px rgba(0,0,0,0.2);color:#333;display:flex;align-items:center;justify-content:center;padding:0;line-height:1;';
+		closeBtn.setAttribute('aria-label', {$closeLabelJs});
+		closeBtn.title = {$closeLabelJs};
+		closeBtn.style.cssText = 'position:absolute;top:8px;right:12px;z-index:100;background:#fff;border:2px solid #333;font-size:28px;font-weight:bold;cursor:pointer;width:40px;height:40px;border-radius:50%;box-shadow:0 2px 5px rgba(0,0,0,0.2);color:#333;display:flex;align-items:center;justify-content:center;padding:0;line-height:1;';
 		closeBtn.onclick = function(){ closeModal(); };
-		
+
 		var iframe = document.createElement('iframe');
 		var url = siteRoot + '/plugins/hikashopshipping/inpost_hika/map.html?types=' + pointTypes.join(',');
 		iframe.src = url;
-		iframe.style.cssText = 'width:100%;height:100%;border:none;';
-		
+		// Mapa pod paskiem z przyciskiem zamknięcia: wcześniej „×” leżał na polu wyszukiwania mapy.
+		iframe.style.cssText = 'position:absolute;top:56px;left:0;width:100%;height:calc(100% - 56px);border:none;';
+
 		modal.appendChild(closeBtn);
 		modal.appendChild(iframe);
 		overlay.appendChild(modal);
 		document.body.appendChild(overlay);
+		closeBtn.focus();
 		
 		overlay.onclick = function(e){
 			if(e.target === overlay) closeModal();
@@ -1995,7 +2091,9 @@ class InpostHika extends \hikashopShippingPlugin
 			openMapOld();
 		}
 
-		if(btn) btn.textContent = {$changeLabelJs};
+		// „Zmień” tylko wtedy, gdy punkt naprawdę jest wybrany (samo otwarcie mapy niczego nie wybiera).
+		var input = document.getElementById(widgetId + '_input');
+		if(btn) btn.textContent = (input && input.value) ? {$changeLabelJs} : {$selectLabelJs};
 	}
 	
 	document.addEventListener('click', function(e){
@@ -2033,7 +2131,7 @@ class InpostHika extends \hikashopShippingPlugin
 			
 			if(!valid){
 				window._inpostShowingAlert = true;
-				alert('Prosze wybrac paczkomat lub punkt odbioru InPost');
+				alert({$selectAlertJs});
 				setTimeout(function(){ window._inpostShowingAlert = false; }, 500);
 				
 				if(params && params.element){
@@ -2054,15 +2152,20 @@ class InpostHika extends \hikashopShippingPlugin
 	}
 
 	/**
-	 * Szuka wybranego paczkomatu we wszystkich znanych źródłach, w kolejności:
-	 * order_shipping_params (po potwierdzeniu zamówienia) -> cart_params już
-	 * załadowany na obiekcie zamówienia -> cart_params z bazy po cart_id -> sesja.
+	 * Szuka wybranego paczkomatu w kolejności:
+	 * order_shipping_params (zamówienie już zapisane) -> sesja (ostatni wybór na mapie
+	 * w tej przeglądarce) -> dane metody dostawy w koszyku (wartość z ostatniego wysłania
+	 * formularza kasy).
+	 *
+	 * Przy wyświetlaniu kasy sesja jest świeższa niż koszyk: koszyk zmienia się dopiero
+	 * po wysłaniu bloku dostawy, więc po przebudowie bloku pokazałby starszy punkt.
+	 * Przy składaniu zamówienia odwrotnie, patrz onBeforeOrderCreate().
 	 */
 	protected function findSelectedLocker($order)
 	{
 		$selected = '';
 
-		// 1. order_shipping_params (ustawiane po onAfterOrderConfirm)
+		// 1. order_shipping_params (od 4.2.22 ustawiane już w onBeforeOrderCreate)
 		if (!empty($order->order_shipping_params)) {
 			$shippingParams = $order->order_shipping_params;
 			if (is_string($shippingParams)) {
@@ -2073,54 +2176,41 @@ class InpostHika extends \hikashopShippingPlugin
 			}
 		}
 
-		// 2. cart_params już załadowany jako obiekt na zamówieniu
-		if ($selected === '' && !empty($order->cart_params) && is_object($order->cart_params)) {
-			$selected = $this->extractLockerFromCartParams($order->cart_params);
+		// 2. Sesja użytkownika (zapis AJAX przy wyborze na mapie)
+		if ($selected === '') {
+			$selected = (string) Factory::getApplication()->getUserState('hikashop.inpost_locker', '');
 		}
 
-		// 3. cart_params z bazy po cart_id
-		if ($selected === '' && !empty($order->cart) && !empty($order->cart->cart_id)) {
-			$db = Factory::getContainer()->get(DatabaseInterface::class);
-			$query = $db->getQuery(true)
-				->select($db->quoteName('cart_params'))
-				->from($db->quoteName('#__hikashop_cart'))
-				->where($db->quoteName('cart_id') . ' = ' . (int)$order->cart->cart_id);
-			$db->setQuery($query);
-			$cartParamsStr = $db->loadResult();
-			if (!empty($cartParamsStr)) {
-				$cartParams = @unserialize($cartParamsStr);
-				if (is_object($cartParams)) {
-					$selected = $this->extractLockerFromCartParams($cartParams);
-				}
+		// 3. Koszyk: przy wyświetlaniu kasy $order to sam koszyk, przy zamówieniu jest w $order->cart.
+		// HikaShop 6.8 trzyma cart_params jako JSON i dekoduje je przy wczytaniu koszyka.
+		if ($selected === '') {
+			$cartParams = $order->cart_params ?? ($order->cart->cart_params ?? null);
+			if (is_object($cartParams)) {
+				$selected = $this->extractLockerFromCartParams($cartParams, (int)($order->order_shipping_id ?? 0));
 			}
 		}
 
-		// 4. Fallback do sesji użytkownika
-		if ($selected === '') {
-			$selected = Factory::getApplication()->getUserState('hikashop.inpost_locker', '');
-		}
-
-		return $selected;
+		return $this->cleanLocker($selected);
 	}
 
 	/**
-	 * Wyciąga wybrany paczkomat z obiektu cart_params: bezpośrednio z pola
-	 * inpost_locker albo z shipping->[warehouse_id]->custom->[shipping_id]
+	 * Wyciąga wybrany paczkomat z obiektu cart_params.
+	 *
+	 * HikaShop zapisuje dane metody dostawy jako shipping[grupa]->{id metody} = [pole => wartość]
+	 * (classes/cart.php, updateShippingCustomData()); po JSON-ie poziomy bywają obiektami albo
+	 * tablicami. Z $shippingId bierze tylko dane tej metody.
 	 */
-	protected function extractLockerFromCartParams($cartParams)
+	protected function extractLockerFromCartParams($cartParams, $shippingId = 0)
 	{
 		if (!empty($cartParams->inpost_locker)) {
-			return $cartParams->inpost_locker;
+			return (string) $cartParams->inpost_locker;
 		}
 
-		if (!empty($cartParams->shipping)) {
-			foreach ($cartParams->shipping as $warehouseData) {
-				if (is_object($warehouseData) && !empty($warehouseData->custom)) {
-					foreach ($warehouseData->custom as $customData) {
-						if (is_object($customData) && !empty($customData->{$this->orderFieldName})) {
-							return $customData->{$this->orderFieldName};
-						}
-					}
+		foreach ((array) ($cartParams->shipping ?? array()) as $group) {
+			foreach ((array) $group as $id => $data) {
+				$data = (array) $data;
+				if (($shippingId === 0 || (int) $id === $shippingId) && !empty($data[$this->orderFieldName]) && is_string($data[$this->orderFieldName])) {
+					return $data[$this->orderFieldName];
 				}
 			}
 		}

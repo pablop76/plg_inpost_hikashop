@@ -15,6 +15,13 @@
     
     <script src="https://geowidget.easypack24.net/js/sdk-for-javascript.js"></script>
     <script>
+        // SDK InPost nie wczytał się (brak sieci, blokada): zamiast pustej ramki krótki komunikat.
+        if (typeof easyPack === 'undefined') {
+            document.getElementById('easypack-map').innerHTML = '<p style="padding:20px;font-size:16px;line-height:1.5;color:#856404;">'
+                + 'Nie mo&#380;na za&#322;adowa&#263; mapy InPost. Od&#347;wie&#380; stron&#281; i spr&oacute;buj ponownie.</p>';
+            throw new Error('InPost: brak SDK EasyPack');
+        }
+
         // Pobierz parametry z URL
         var params = new URLSearchParams(window.location.search);
         var types = (params.get('types') || 'parcel_locker').split(',');

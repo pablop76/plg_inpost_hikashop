@@ -60,6 +60,14 @@ final class WtyczkaTestowa extends InpostHika
 
     public ?object $odpowiedzGet = null;
 
+    public ?object $odpowiedzDelete = null;
+
+    /** odpowiedź na pobranie etykiety (null = błąd HTTP, tak oddaje go callShipXApi) */
+    public ?string $odpowiedzSurowa = null;
+
+    /** @var list<mixed> treść kolejnych żądań POST */
+    public array $danePost = [];
+
     /** @var list<int> */
     public array $przekierowania = [];
 
@@ -74,11 +82,21 @@ final class WtyczkaTestowa extends InpostHika
         $this->wywolaniaApi[] = ['metoda' => (string) $method, 'adres' => (string) $endpoint];
 
         if ($method === 'POST') {
+            $this->danePost[] = $data;
+
             return array_shift($this->odpowiedziPost);
+        }
+
+        if ($rawResponse) {
+            return $this->odpowiedzSurowa;
         }
 
         if ($method === 'GET') {
             return $this->odpowiedzGet;
+        }
+
+        if ($method === 'DELETE') {
+            return $this->odpowiedzDelete;
         }
 
         return null;
@@ -127,6 +145,16 @@ final class WtyczkaTestowa extends InpostHika
     public function utworz($order, $kod, $parametry)
     {
         $this->handleCreateShipment($order, $kod, $parametry, 'small');
+    }
+
+    public function odtworz($order, $parametry)
+    {
+        $this->handleRecreateShipment($order, $parametry);
+    }
+
+    public function etykieta($order, $parametry)
+    {
+        $this->handleGetLabel($order, $parametry);
     }
 
     public function odmowa($wynik)
@@ -204,18 +232,19 @@ $pdo->prepare("
 $idShipx = (int) $pdo->lastInsertId();
 
 $idNowego      = 0;
+$dodatkowe     = [];
 $katalogLogow  = sys_get_temp_dir() . '/inpost_test_' . $znacznik;
 $nazwaKopii    = 'inpost_test_' . $znacznik;
 $stanSesji     = $app->getUserState('hikashop.inpost_locker', '');
 
-register_shutdown_function(static function () use ($pdo, $prefix, $idKlienta, $idAdresu, $idShipx, &$idNowego, $katalogLogow, $nazwaKopii, $app, $stanSesji): void {
+register_shutdown_function(static function () use ($pdo, $prefix, $idKlienta, $idAdresu, $idShipx, &$idNowego, &$dodatkowe, $katalogLogow, $nazwaKopii, $app, $stanSesji): void {
     try {
         $pdo->prepare("DELETE FROM {$prefix}hikashop_email_log WHERE email_log_name = :nazwa")->execute([':nazwa' => $nazwaKopii]);
     } catch (Throwable $blad) {
         // Witryna bez historii wiadomości HikaShopa: nie ma czego sprzątać.
     }
 
-    foreach (array_filter([$idShipx, $idNowego]) as $id) {
+    foreach (array_filter(array_merge([$idShipx, $idNowego], $dodatkowe)) as $id) {
         $pdo->prepare("DELETE FROM {$prefix}hikashop_order WHERE order_id = :id")->execute([':id' => $id]);
         $pdo->prepare("DELETE FROM {$prefix}hikashop_history WHERE history_order_id = :id")->execute([':id' => $id]);
         $pdo->prepare("DELETE FROM {$prefix}hikashop_order_product WHERE order_id = :id")->execute([':id' => $id]);
@@ -330,6 +359,74 @@ try {
 
 wynik('powiadomienie o nowym zamówieniu dla sklepu zawiera paczkomat', str_contains($trescDlaSklepu, $kod));
 
+// Punkt wysłany z formularzem kasy wygrywa z sesją. Do 4.2.24 liczyła się tylko sesja, a zapis
+// AJAX wyboru mógł nie dojść albo nie zdążyć przed „Zamawiam”: zamówienie dostawało stary punkt.
+// Koszyk w postaci, w jakiej HikaShop 6.8 go zapisuje (JSON) i wczytuje (json_decode).
+$paczkomatB = 'TSTB' . strtoupper(substr($znacznik, 3, 3)) . 'M - Próbna 2, Kraków';
+$kodB       = strtok($paczkomatB, ' ');
+$zapiszZamowienie = static function (stdClass $zamowienie) use ($orderClass, &$dodatkowe, $pdo, $prefix): array {
+    $id = (int) $orderClass->save($zamowienie);
+
+    if ($id > 0) {
+        $dodatkowe[] = $id;
+    }
+
+    $q = $pdo->prepare("SELECT inpost_locker, order_shipping_params FROM {$prefix}hikashop_order WHERE order_id = :id");
+    $q->execute([':id' => $id]);
+
+    return [$id, $q->fetch(PDO::FETCH_ASSOC) ?: ['inpost_locker' => null, 'order_shipping_params' => '']];
+};
+
+$app->setUserState('hikashop.inpost_locker', $paczkomat);
+$zFormularza       = $budujZamowienie();
+$zFormularza->cart = (object) ['cart_params' => json_decode(json_encode((object) ['shipping' => [0 => (object) [$idMetody => ['inpost_locker' => $paczkomatB]]]]))];
+[$idB, $wierszB]   = $zapiszZamowienie($zFormularza);
+
+wynik('punkt z formularza kasy ma pierwszeństwo przed starszym wyborem w sesji', $wierszB['inpost_locker'] === $paczkomatB, 'w bazie: ' . var_export($wierszB['inpost_locker'], true));
+wynik('punkt z formularza jest też w parametrach dostawy', str_contains((string) $wierszB['order_shipping_params'], $kodB));
+
+$trescB = '';
+
+try {
+    $doMaila = $orderClass->get($idB);
+    $orderClass->loadOrderNotification($doMaila, 'order_creation_notification');
+    $trescB = (string) ($doMaila->mail->body ?? '');
+} catch (Throwable $blad) {
+    echo '  (budowanie wiadomości: ' . $blad->getMessage() . ')' . PHP_EOL;
+}
+
+wynik('potwierdzenie zawiera punkt z formularza, a nie ze starszej sesji', str_contains($trescB, $kodB) && !str_contains($trescB, $kod));
+
+// Dane innej metody dostawy w koszyku nie są punktem tej metody.
+$app->setUserState('hikashop.inpost_locker', '');
+$innaMetoda       = $budujZamowienie();
+$innaMetoda->cart = (object) ['cart_params' => json_decode(json_encode((object) ['shipping' => [0 => (object) [($idMetody + 1000) => ['inpost_locker' => $paczkomatB]]]]))];
+[$idInna]         = $zapiszZamowienie($innaMetoda);
+wynik('punkt zapisany przy innej metodzie dostawy nie trafia do zamówienia', $idInna === 0);
+$app->getMessageQueue(true);
+
+// Wartość, która nie jest nazwą punktu InPost, nie przechodzi.
+$app->setUserState('hikashop.inpost_locker', 'to nie jest paczkomat');
+[$idZly] = $zapiszZamowienie($budujZamowienie());
+$komunikaty = implode(' | ', array_map(static fn ($k) => (string) $k['message'], $app->getMessageQueue(true)));
+wynik('zamówienie z wartością, która nie jest punktem InPost, nie powstaje', $idZly === 0, 'zapisano ' . $idZly);
+wynik('klient czyta, że punkt jest nieprawidłowy', str_contains($komunikaty, Text::_('PLG_HIKASHOPSHIPPING_INPOST_HIKA_INVALID_POINT')) && !str_contains($komunikaty, 'PLG_HIKASHOPSHIPPING'), $komunikaty);
+
+// PaczkoPunkt (nazwa z myślnikiem) jest poprawnym punktem.
+$app->setUserState('hikashop.inpost_locker', 'POP-TST' . strtoupper(substr($znacznik, 0, 2)) . ' - Sklep Testowy, Testowo');
+[$idPop, $wierszPop] = $zapiszZamowienie($budujZamowienie());
+wynik('zamówienie z PaczkoPunktem (POP-…) powstaje', $idPop > 0 && str_starts_with((string) $wierszPop['inpost_locker'], 'POP-TST'));
+$app->getMessageQueue(true);
+
+// Zapis AJAX: bez znaczników i bez nieograniczonej długości.
+foreach (['<a href="https://example.invalid/x">Kliknij</a> KRA010M' => 'Kliknij KRA010M', str_repeat('A', 100000) => str_repeat('A', 255)] as $wyslane => $oczekiwane) {
+    $app->getInput()->post->set('inpost_locker_save', $wyslane);
+    nowaWtyczka();
+    $wSesji = (string) $app->getUserState('hikashop.inpost_locker', '');
+    wynik('zapis AJAX porządkuje wartość (' . strlen($wyslane) . ' znaków)', $wSesji === $oczekiwane, 'w sesji ' . strlen($wSesji) . ' znaków: ' . mb_substr($wSesji, 0, 40));
+}
+$app->getInput()->post->set('inpost_locker_save', '');
+
 $app->setUserState('hikashop.inpost_locker', '');
 $app->getMessageQueue(true);
 
@@ -420,6 +517,15 @@ $komunikaty = implode(' | ', array_map(static fn ($k) => (string) $k['message'],
 wynik('po odmowie InPost rezerwacja jest zwolniona', $numerPrzesylki($idShipx) === null, 'w bazie: ' . var_export($numerPrzesylki($idShipx), true));
 wynik('po odmowie administrator czyta powód', str_contains($komunikaty, 'paczkomatu nie istnieje'), $komunikaty);
 wynik('po odmowie nie ma komunikatu o nieznanym wyniku', !str_contains($komunikaty, Text::sprintf('PLG_HIKASHOPSHIPPING_INPOST_HIKA_CREATE_UNKNOWN', $idShipx)));
+wynik('do InPost idzie kod punktu wielkimi literami', ($w->danePost[0]['custom_attributes']['target_point'] ?? null) === strtoupper($kod), var_export($w->danePost[0]['custom_attributes']['target_point'] ?? null, true));
+
+// PaczkoPunkt: ShipX przyjmuje nazwę dosłownie, z myślnikiem (do 4.2.24 myślnik był wycinany).
+$w = nowaWtyczka();
+$w->odpowiedziPost = [(object) ['error' => 'validation_failed', '_httpCode' => 400]];
+$w->utworz($zamowienie, 'pop-kra12 - Sklep, Kraków', $parametry);
+$app->getMessageQueue(true);
+
+wynik('PaczkoPunkt: do InPost idzie „POP-KRA12”', ($w->danePost[0]['custom_attributes']['target_point'] ?? null) === 'POP-KRA12', var_export($w->danePost[0]['custom_attributes']['target_point'] ?? null, true));
 
 // Sukces.
 $w = nowaWtyczka();
@@ -437,6 +543,22 @@ $app->getMessageQueue(true);
 
 wynik('przy istniejącej przesyłce InPost nie jest wołany', $w->ileWywolan('POST') === 0);
 wynik('istniejąca przesyłka zostaje przy zamówieniu', (string) $numerPrzesylki($idShipx) === '777001');
+
+// „Utwórz ponownie”: razem z numerem przesyłki znika jej numer nadania.
+$pdo->prepare("UPDATE {$prefix}hikashop_order SET inpost_tracking_number = 'STARYNUMER0001' WHERE order_id = :id")->execute([':id' => $idShipx]);
+$w = nowaWtyczka();
+$w->odpowiedzDelete = (object) ['status' => 'cancelled', '_httpCode' => 200];
+$w->odtworz($zamowienie, $parametry);
+$app->getMessageQueue(true);
+$q = $pdo->prepare("SELECT inpost_shipment_id, inpost_tracking_number FROM {$prefix}hikashop_order WHERE order_id = :id");
+$q->execute([':id' => $idShipx]);
+$poOdtworzeniu = $q->fetch(PDO::FETCH_ASSOC);
+
+wynik('„Utwórz ponownie” anuluje przesyłkę w InPost', $w->ileWywolan('DELETE') === 1);
+wynik('„Utwórz ponownie” zdejmuje numer przesyłki i numer nadania', $poOdtworzeniu['inpost_shipment_id'] === null && $poOdtworzeniu['inpost_tracking_number'] === null, json_encode($poOdtworzeniu));
+
+// Dalsze testy panelu potrzebują przesyłki 777001.
+$ustawNumer($idShipx, '777001');
 
 // --- 4. Panel ShipX w zapleczu -------------------------------------------
 
@@ -488,6 +610,24 @@ $html = $rysuj($w, $zamowienie, 'order_back_show');
 
 wynik('przesyłka niepotwierdzona: zwykłe pytanie o anulowanie', str_contains($html, $pytanie('PLG_HIKASHOPSHIPPING_INPOST_HIKA_RECREATE_CONFIRM', '777001')));
 wynik('oba pytania mają różną treść', $pytanie('PLG_HIKASHOPSHIPPING_INPOST_HIKA_RECREATE_CONFIRM', '777001') !== $pytanie('PLG_HIKASHOPSHIPPING_INPOST_HIKA_RECREATE_CONFIRM_PAID', '777001', 'confirmed'));
+
+// Błąd pobierania etykiety: komunikat dla administratora, bez ostrzeżeń PHP z kodu wtyczki.
+$w = nowaWtyczka();
+$w->odpowiedzSurowa = null;
+$ostrzezenia = [];
+set_error_handler(static function (int $nr, string $tresc, string $plik = '', int $linia = 0) use (&$ostrzezenia): bool {
+    if (str_contains(str_replace('\\', '/', $plik), 'inpost_hika')) {
+        $ostrzezenia[] = $tresc . ' (linia ' . $linia . ')';
+    }
+
+    return true;
+});
+$w->etykieta($zamowienie, $parametry);
+restore_error_handler();
+$komunikaty = implode(' | ', array_map(static fn ($k) => (string) $k['message'], $app->getMessageQueue(true)));
+
+wynik('błąd etykiety: komunikat dla administratora', str_contains($komunikaty, 'etykiety'), $komunikaty);
+wynik('błąd etykiety: bez ostrzeżeń PHP', $ostrzezenia === [], implode(' / ', $ostrzezenia));
 
 // Rezerwacja.
 $ustawNumer($idShipx, 'pending:' . (time() - 60));
@@ -606,9 +746,60 @@ $rysuj($w, $obce, 'order_back_show');
 
 wynik('zamówienie z inną metodą dostawy: akcja wtyczki się nie wykonuje', str_starts_with((string) $numerPrzesylki($idShipx), 'pending:') && $w->przekierowania === []);
 
+$ustawNumer($idShipx, null);
+
+// „Utwórz przesyłkę” wysłane z formularza (np. z karty otwartej przed zmianą statusu): te same
+// warunki co dla przycisku. Kontrola na końcu pokazuje, że ta sama akcja przy dobrym stanie działa.
+$ustawStatus = static function (string $status) use ($pdo, $prefix, $idShipx): void {
+    $pdo->prepare("UPDATE {$prefix}hikashop_order SET order_status = :s WHERE order_id = :id")->execute([':s' => $status, ':id' => $idShipx]);
+};
+$utworzZFormularza = static function (object $parametryMetody) use ($app, $idShipx, $kod, $orderClass, $rysuj): WtyczkaTestowa {
+    $we = $app->getInput();
+    $we->set('inpost_action', 'create_shipment');
+    $we->set('order_id', $idShipx);
+    $we->set('locker_name', $kod);
+    $we->set('parcel_size', 'small');
+    $we->post->set(Joomla\CMS\Session\Session::getFormToken(), '1');
+
+    $w = nowaWtyczka();
+    $w->parametryDostawy = $parametryMetody;
+    $w->odpowiedziPost   = [(object) ['error' => 'validation_failed', '_httpCode' => 400]];
+    $rysuj($w, $orderClass->get($idShipx), 'order_back_show');
+
+    return $w;
+};
+
+$ustawStatus('cancelled');
+$w = $utworzZFormularza($parametry);
+$komunikaty = implode(' | ', array_map(static fn ($k) => (string) $k['message'], $app->getMessageQueue(true)));
+wynik('zamówienie anulowane: akcja z formularza nie tworzy przesyłki', $w->ileWywolan('POST') === 0, implode(', ', array_column($w->wywolaniaApi, 'adres')));
+wynik('zamówienie anulowane: administrator czyta powód', str_contains($komunikaty, 'cancelled') && !str_contains($komunikaty, 'PLG_HIKASHOPSHIPPING'), $komunikaty);
+
+$ustawStatus('confirmed');
+$w = $utworzZFormularza((object) array_merge((array) $parametry, ['enable_shipx' => 0]));
+$app->getMessageQueue(true);
+wynik('ShipX wyłączony: akcja z formularza nie tworzy przesyłki', $w->ileWywolan('POST') === 0);
+
+$w = $utworzZFormularza($parametry);
+$app->getMessageQueue(true);
+wynik('kontrola: przy potwierdzonym zamówieniu i włączonym ShipX ta sama akcja woła InPost', $w->ileWywolan('POST') === 1);
+
 $app->getInput()->set('inpost_action', '');
 $app->getInput()->set('order_id', 0);
 $ustawNumer($idShipx, null);
+
+// Zamówienie InPost bez punktu: w widoku zamówienia informacja, w wiadomości nic.
+$pdo->prepare("UPDATE {$prefix}hikashop_order SET inpost_locker = NULL WHERE order_id = :id")->execute([':id' => $idShipx]);
+$bezPunktu = $orderClass->get($idShipx);
+$bezPunktu->order_shipping_params = new stdClass();
+
+$w = nowaWtyczka();
+$w->parametryDostawy = $parametry;
+$html = $rysuj($w, $bezPunktu, 'order_back_show');
+wynik('zamówienie bez punktu: widok zamówienia mówi, czego brakuje', str_contains($html, 'inpost_locker_missing') && !str_contains($html, 'PLG_HIKASHOPSHIPPING') && $zrownowazony($html), strip_tags($html));
+wynik('zamówienie bez punktu: wiadomość bez tej informacji', $rysuj($w, $bezPunktu, 'email_notification_html') === '');
+
+$pdo->prepare("UPDATE {$prefix}hikashop_order SET inpost_locker = :p WHERE order_id = :id")->execute([':p' => $paczkomat, ':id' => $idShipx]);
 
 // --- 5. Dziennik debug ----------------------------------------------------
 
@@ -691,8 +882,8 @@ foreach (['pl-PL', 'en-GB'] as $jezyk) {
         }
 
         // Plik angielski ma część starych wpisów bez przedrostka wtyczki: sprawdzamy w nim
-        // tylko teksty dodane razem z rezerwacją.
-        if ($jezyk === 'en-GB' && !preg_match('/_(PENDING|CREATE_UNKNOWN|RECREATE)/', $klucz)) {
+        // tylko teksty dodane od 4.2.22 (rezerwacja, kasa, mapa).
+        if ($jezyk === 'en-GB' && !preg_match('/_(PENDING|CREATE_UNKNOWN|RECREATE|ALERT_SELECT_POINT|INVALID_POINT|MAP_LOAD_FAILED|CLOSE_MAP|STATUS_NOT_ALLOWED|NO_LOCKER_ADMIN)/', $klucz)) {
             continue;
         }
 
