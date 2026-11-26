@@ -62,7 +62,7 @@ final class WtyczkaTestowa extends InpostHika
 
     public ?object $odpowiedzDelete = null;
 
-    /** odpowiedź na pobranie etykiety (null = błąd HTTP, tak oddaje go callShipXApi) */
+    /** odpowiedź na pobranie etykiety (null = błąd połączenia; przy błędzie HTTP treść odpowiedzi, jak w callShipXApi) */
     public ?string $odpowiedzSurowa = null;
 
     /** @var list<mixed> treść kolejnych żądań POST */
@@ -629,6 +629,15 @@ $komunikaty = implode(' | ', array_map(static fn ($k) => (string) $k['message'],
 wynik('błąd etykiety: komunikat dla administratora', str_contains($komunikaty, 'etykiety'), $komunikaty);
 wynik('błąd etykiety: bez ostrzeżeń PHP', $ostrzezenia === [], implode(' / ', $ostrzezenia));
 
+// Błąd etykiety z opisem od InPost: administrator widzi treść, znaczniki HTML są zabezpieczone.
+$w = nowaWtyczka();
+$w->odpowiedzSurowa = '{"status":404,"error":"resource_not_found","message":"Etykieta <b>niedostępna</b>"}';
+$w->etykieta($zamowienie, $parametry);
+$komunikaty = implode(' | ', array_map(static fn ($k) => (string) $k['message'], $app->getMessageQueue(true)));
+
+wynik('błąd etykiety: komunikat zawiera opis od InPost', str_contains($komunikaty, 'Etykieta &lt;b&gt;niedostępna&lt;/b&gt;'), $komunikaty);
+wynik('błąd etykiety: HTML z odpowiedzi nie trafia do komunikatu', !str_contains($komunikaty, '<b>'), $komunikaty);
+
 // Rezerwacja.
 $ustawNumer($idShipx, 'pending:' . (time() - 60));
 $w = nowaWtyczka();
@@ -830,6 +839,23 @@ $w = nowaWtyczka();
 $w->plikDziennika = $katalogLogow . '/wylaczony.php';
 $w->zapiszDebug('nie powinno powstać', null, (object) ['debug' => 0]);
 wynik('przy wyłączonym debugowaniu nic się nie zapisuje', !is_file($katalogLogow . '/wylaczony.php'));
+
+// Limit rozmiaru: powyżej 2 MB zostaje jedna kopia .1.php, nowy dziennik znów od blokady die().
+$blokada = "#\n#<?php die('Forbidden.'); ?>\n";
+$kopiaDziennika = $katalogLogow . '/inpost_hika_debug.1.php';
+file_put_contents($kopiaDziennika, $blokada . "najstarsza kopia\n");
+file_put_contents($nowyPlik, $blokada . str_repeat('x', 2 * 1024 * 1024 + 10) . "\ntreść sprzed rotacji\n");
+clearstatcache(); // zapis wyżej nie czyści pamięci stat() PHP, a wtyczka czyta rozmiar przez filesize()
+
+$w = nowaWtyczka();
+$w->plikDziennika = $nowyPlik;
+$w->zapiszDebug('wpis po rotacji', null, (object) ['debug' => 1]);
+$tresc = (string) file_get_contents($nowyPlik);
+$trescKopii = (string) file_get_contents($kopiaDziennika);
+
+wynik('za duży dziennik: nowy plik od blokady die() i z nowym wpisem', str_starts_with($tresc, $blokada) && str_contains($tresc, 'wpis po rotacji') && strlen($tresc) < 10000, (string) strlen($tresc));
+wynik('za duży dziennik: poprzednia treść w kopii .1.php z blokadą', str_starts_with($trescKopii, $blokada) && str_contains($trescKopii, 'treść sprzed rotacji'));
+wynik('za duży dziennik: zostaje jedna kopia', !str_contains($trescKopii, 'najstarsza kopia') && count((array) glob($katalogLogow . '/inpost_hika_debug*')) === 2);
 
 // --- 6. Manifest i tłumaczenia -------------------------------------------
 

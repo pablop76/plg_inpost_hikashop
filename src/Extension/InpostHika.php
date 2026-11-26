@@ -1,7 +1,7 @@
 <?php
 /**
  * @package     HikaShop InPost Paczkomaty Shipping Plugin
- * @version     4.2.25
+ * @version     4.2.26
  * @copyright   (C) 2026
  * @license     GNU/GPLv3 http://www.gnu.org/licenses/gpl-3.0.html
  */
@@ -57,6 +57,8 @@ class InpostHika extends \hikashopShippingPlugin
 	// Dziennik debug: chroniony plik .php (patrz resolveDebugLogPath()) i nazwa sprzed 4.2.22.
 	const DEBUG_LOG_FILE = 'inpost_hika_debug.php';
 	const DEBUG_LOG_FILE_LEGACY = 'inpost_hika_debug.log';
+	// Powyżej tego rozmiaru dziennik przechodzi do jednej kopii .1.php (są w nim dane odbiorców).
+	const DEBUG_LOG_MAX_BYTES = 2097152;
 
 	// Piktogram paczki w ramce paczkomatu, zapisany kodem HTML, a nie znakiem. HikaShop zapisuje
 	// kopię każdej wiadomości (wtyczka „Historia e-maili”), a jego tabele mają zwykle kodowanie
@@ -1144,7 +1146,7 @@ class InpostHika extends \hikashopShippingPlugin
 		// Pobierz etykietę jako PDF. format=Pdf; type z konfiguracji:
 		// normal = A4 (drukarka laserowa/atramentowa), A6 = mała etykieta (drukarka termiczna).
 		$labelType = (($shippingParams->label_type ?? 'normal') === 'A6') ? 'A6' : 'normal';
-		// Przy błędzie HTTP callShipXApi() oddaje null; rzutowanie oszczędza ostrzeżeń PHP 8.1+ niżej.
+		// Przy błędzie połączenia callShipXApi() oddaje null; rzutowanie oszczędza ostrzeżeń PHP 8.1+ niżej.
 		$labelData = (string) $this->callShipXApi(
 			'GET',
 			'/v1/shipments/' . $shipmentId . '/label?format=Pdf&type=' . $labelType,
@@ -1170,10 +1172,11 @@ class InpostHika extends \hikashopShippingPlugin
 			// Spróbuj zdekodować jako JSON żeby zobaczyć błąd
 			$errorData = @json_decode($labelData);
 			$errorMsg = 'Błąd pobierania etykiety.';
-			if ($errorData && isset($errorData->message)) {
-				$errorMsg .= ' ' . $errorData->message;
-			} elseif ($errorData && isset($errorData->error)) {
-				$errorMsg .= ' ' . $errorData->error;
+			// Tekst z serwera InPost trafia do komunikatu Joomli, który nie jest escapowany.
+			if ($errorData && isset($errorData->message) && is_scalar($errorData->message)) {
+				$errorMsg .= ' ' . htmlspecialchars((string) $errorData->message);
+			} elseif ($errorData && isset($errorData->error) && is_scalar($errorData->error)) {
+				$errorMsg .= ' ' . htmlspecialchars((string) $errorData->error);
 			}
 			$this->debug('Label download failed', ['response' => substr($labelData, 0, 500)], $shippingParams);
 			Factory::getApplication()->enqueueMessage($errorMsg . ' InPost może jeszcze przetwarzać przesyłkę - odczekaj kilka sekund i spróbuj ponownie.', 'error');
@@ -1283,7 +1286,8 @@ class InpostHika extends \hikashopShippingPlugin
 		}
 		
 		if ($rawResponse) {
-			return ($httpCode >= 200 && $httpCode < 300) ? $response : null;
+			// Także przy błędzie HTTP: ShipX opisuje w treści (JSON), co poszło nie tak, a handleGetLabel() to pokazuje.
+			return $response;
 		}
 
 		$decoded = json_decode($response);
@@ -1567,6 +1571,13 @@ class InpostHika extends \hikashopShippingPlugin
 
 		$logFile = $this->resolveDebugLogPath();
 		if ($logFile === '') return;
+
+		if (@filesize($logFile) > self::DEBUG_LOG_MAX_BYTES) {
+			// Kopia zachowuje swój nagłówek z die(); nowy plik dostaje go w prepareDebugLog().
+			@rename($logFile, substr($logFile, 0, -4) . '.1.php');
+			// Bez tego is_file() w prepareDebugLog() wziąłby stary wynik z pamięci PHP i pominął nagłówek.
+			clearstatcache(true, $logFile);
+		}
 
 		$this->prepareDebugLog($logFile);
 
@@ -2000,17 +2011,8 @@ class InpostHika extends \hikashopShippingPlugin
 		}
 	}
 	
-	function openMapOld(){
-		// Stare API - iframe z map.html
-		closeModal();
-		
-		var overlay = document.createElement('div');
-		overlay.id = 'inpost-modal-overlay';
-		overlay.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.7);z-index:99999;display:flex;align-items:center;justify-content:center;';
-		
-		var modal = document.createElement('div');
-		modal.style.cssText = 'background:#fff;width:95%;max-width:1000px;height:85vh;max-height:700px;border-radius:8px;overflow:hidden;position:relative;box-shadow:0 4px 20px rgba(0,0,0,0.3);';
-		
+	// Wspólny „×” obu map; mapa leży pod nim (top:56px), żeby go nie zasłaniała.
+	function createCloseButton(){
 		var closeBtn = document.createElement('button');
 		closeBtn.type = 'button';
 		closeBtn.innerHTML = '&times;';
@@ -2018,6 +2020,21 @@ class InpostHika extends \hikashopShippingPlugin
 		closeBtn.title = {$closeLabelJs};
 		closeBtn.style.cssText = 'position:absolute;top:8px;right:12px;z-index:100;background:#fff;border:2px solid #333;font-size:28px;font-weight:bold;cursor:pointer;width:40px;height:40px;border-radius:50%;box-shadow:0 2px 5px rgba(0,0,0,0.2);color:#333;display:flex;align-items:center;justify-content:center;padding:0;line-height:1;';
 		closeBtn.onclick = function(){ closeModal(); };
+		return closeBtn;
+	}
+
+	function openMapOld(){
+		// Stare API - iframe z map.html
+		closeModal();
+
+		var overlay = document.createElement('div');
+		overlay.id = 'inpost-modal-overlay';
+		overlay.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.7);z-index:99999;display:flex;align-items:center;justify-content:center;';
+
+		var modal = document.createElement('div');
+		modal.style.cssText = 'background:#fff;width:95%;max-width:1000px;height:85vh;max-height:700px;border-radius:8px;overflow:hidden;position:relative;box-shadow:0 4px 20px rgba(0,0,0,0.3);';
+
+		var closeBtn = createCloseButton();
 
 		var iframe = document.createElement('iframe');
 		var url = siteRoot + '/plugins/hikashopshipping/inpost_hika/map.html?types=' + pointTypes.join(',');
@@ -2061,12 +2078,16 @@ class InpostHika extends \hikashopShippingPlugin
 			geowidget.setAttribute('language', 'pl');
 			geowidget.setAttribute('config', geowidgetConfig);
 			geowidget.setAttribute('onpoint', 'inpostPointSelected_{$widgetId}');
-			geowidget.style.cssText = 'display:block;width:100%;height:100%;';
-			
+			// Bez „×” okno v5 zamykało się na telefonie tylko dotknięciem wąskiego tła.
+			geowidget.style.cssText = 'position:absolute;top:56px;left:0;width:100%;height:calc(100% - 56px);display:block;';
+			var closeBtn = createCloseButton();
+
+			modal.appendChild(closeBtn);
 			modal.appendChild(geowidget);
 			overlay.appendChild(modal);
 			document.body.appendChild(overlay);
-			
+			closeBtn.focus();
+
 			overlay.onclick = function(e){
 				if(e.target === overlay) closeModal();
 			};
